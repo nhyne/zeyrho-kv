@@ -3,4 +3,8 @@ name = "zeyrho-queue"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "chapter_1"
+path = "src/chapter_1/main.rs"
+
 [dependencies]
