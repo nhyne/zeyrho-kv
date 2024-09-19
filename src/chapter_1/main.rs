@@ -1,4 +1,6 @@
 use std::collections::VecDeque;
+use std::ops::Deref;
+use std::sync::Mutex;
 use tonic::{async_trait, Request, Response, Status, transport::Server};
 use crate::simple_queue::{DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, SizeRequest, SizeResponse};
 use crate::simple_queue::queue_server::{Queue, QueueServer};
@@ -23,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_v1()
         .unwrap();
 
-    let queue_service = SimpleQueue{queue: VecDeque::new()};
+    let queue_service = SimpleQueue{queue: Mutex::new(VecDeque::new())};
 
     Server::builder()
         .add_service(service)
@@ -45,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 // }
 
 struct SimpleQueue {
-    queue: VecDeque<u32>
+    queue: Mutex<VecDeque<i32>>
 }
 
 // impl Queue for SimpleQueue {
@@ -73,7 +75,12 @@ struct SimpleQueue {
 #[async_trait]
 impl Queue for SimpleQueue {
     async fn enqueue(&self, request: Request<EnqueueRequest>) -> Result<Response<EnqueueResponse>, Status> {
-        todo!()
+        let mut q = self.queue.lock().unwrap();
+        q.push_back(request.into_inner().number);
+
+        Ok(Response::new(simple_queue::EnqueueResponse {
+            confirmation: { "cool".to_string() }
+        }))
     }
 
     async fn dequeue(&self, request: Request<DequeueRequest>) -> Result<Response<DequeueResponse>, Status> {
@@ -81,6 +88,12 @@ impl Queue for SimpleQueue {
     }
 
     async fn size(&self, request: Request<SizeRequest>) -> Result<Response<SizeResponse>, Status> {
-        todo!()
+        let g = self.queue.lock().unwrap();
+        let s = g.len() as i32;
+
+        println!("{}", s);
+        Ok(Response::new(SizeResponse {
+            size: { s }
+        }))
     }
 }
