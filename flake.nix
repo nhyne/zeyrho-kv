@@ -19,9 +19,11 @@
         devShell = pkgs.mkShell {
           buildInputs = with pkgs; [
             cargo
-            rustup
             gnumake
             gcc
+            grpcurl
+            protobuf
+            rustup
           ];
 
         };

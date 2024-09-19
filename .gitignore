@@ -1,3 +1,5 @@
 /target
 
 .direnv
+
+src/chapter_1/*.bin

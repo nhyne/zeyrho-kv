@@ -1,0 +1,27 @@
+syntax = "proto3";
+package simple_queue;
+
+service Queue {
+  rpc Enqueue (EnqueueRequest) returns (EnqueueResponse);
+  rpc Dequeue (DequeueRequest) returns (DequeueResponse);
+  rpc Size (SizeRequest) returns (SizeResponse);
+}
+
+message EnqueueRequest {
+
+}
+message EnqueueResponse {
+
+}
+message DequeueRequest {
+
+}
+message DequeueResponse {
+
+}
+message SizeRequest {
+
+}
+message SizeResponse {
+
+}

@@ -8,3 +8,10 @@ name = "chapter_1"
 path = "src/chapter_1/main.rs"
 
 [dependencies]
+prost = "0.13.2"
+tonic = "0.12.2"
+tonic-reflection = "0.12.2"
+tokio = { version = "1", features = ["full"] }
+
+[build-dependencies]
+tonic-build = "0.12.2"
