@@ -43,8 +43,7 @@ struct SimpleQueue {
 #[async_trait]
 impl Queue for SimpleQueue {
     async fn enqueue(&self, request: Request<EnqueueRequest>) -> Result<Response<EnqueueResponse>, Status> {
-        let mut q = self.queue.lock().unwrap();
-        q.push_back(request.into_inner().number);
+        self.queue.lock().unwrap().push_back(request.get_ref().number);
 
         Ok(Response::new(simple_queue::EnqueueResponse {
             confirmation: { "cool".to_string() }
@@ -52,14 +51,25 @@ impl Queue for SimpleQueue {
     }
 
     async fn dequeue(&self, request: Request<DequeueRequest>) -> Result<Response<DequeueResponse>, Status> {
-        todo!()
+        let num_to_pop = request.get_ref().number;
+        let mut return_vec = Vec::new();
+        let mut q = self.queue.lock().unwrap();
+        for n in 0..num_to_pop {
+            match q.pop_front() {
+                Some(n) => return_vec.push(n),
+                None => continue,
+            }
+        }
+
+        Ok(Response::new(simple_queue::DequeueResponse {
+            numbers : { return_vec }
+        }))
+
     }
 
     async fn size(&self, request: Request<SizeRequest>) -> Result<Response<SizeResponse>, Status> {
-        let g = self.queue.lock().unwrap();
-        let s = g.len() as i32;
+        let s = self.queue.lock().unwrap().len() as i32;
 
-        println!("{}", s);
         Ok(Response::new(SizeResponse {
             size: { s }
         }))
