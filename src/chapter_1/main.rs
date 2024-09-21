@@ -1,10 +1,12 @@
 use std::collections::VecDeque;
 use std::ops::Deref;
 use std::sync::Mutex;
+use std::time;
 use tonic::{async_trait, Request, Response, Status, transport::Server};
 use crate::simple_queue::{DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, SizeRequest, SizeResponse};
 use crate::simple_queue::queue_server::{Queue, QueueServer};
 use tonic_reflection;
+use rand::prelude::*;
 
 mod simple_queue;
 
@@ -43,8 +45,13 @@ struct SimpleQueue {
 #[async_trait]
 impl Queue for SimpleQueue {
     async fn enqueue(&self, request: Request<EnqueueRequest>) -> Result<Response<EnqueueResponse>, Status> {
-        self.queue.lock().unwrap().push_back(request.get_ref().number);
+        // tokio::time::sleep(time::Duration::from_millis(rand::thread_rng().gen_range(1..2000))).await;
+        let mut grabbed_lock = self.queue.lock() .unwrap();
 
+        // tokio::time::sleep(time::Duration::from_millis(rand::thread_rng().gen_range(1..2000))).await;
+        grabbed_lock.push_back(request.get_ref().number);
+
+        // tokio::time::sleep(time::Duration::from_millis(rand::thread_rng().gen_range(1..2000))).await;
         Ok(Response::new(simple_queue::EnqueueResponse {
             confirmation: { "cool".to_string() }
         }))

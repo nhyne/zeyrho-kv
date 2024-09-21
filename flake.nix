@@ -21,6 +21,7 @@
             cargo
             gnumake
             gcc
+            ghz
             grpcurl
             protobuf
             rustup
