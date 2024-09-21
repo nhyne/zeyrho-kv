@@ -43,9 +43,11 @@ struct SimpleQueue {
     queue: Mutex<VecDeque<i32>>
 }
 
-
 #[derive(Debug, Default, Clone)]
 struct LoadShed {
+    // would want to do some sort of "bucketing" or "how much load do we have?"
+    // and then flip this flag, and we'll start rejecting requests
+    // Idea is explained in this blog post: https://www.warpstream.com/blog/dealing-with-rejection-in-distributed-systems
     shed: Arc<Mutex<bool>>,
 }
 
@@ -54,7 +56,6 @@ impl Interceptor for LoadShed {
         let mut grabbed_lock = self.shed.lock().unwrap();
 
         let current_val = grabbed_lock.clone();
-        *grabbed_lock = !*grabbed_lock;
 
         if current_val {
             Err(Status::resource_exhausted("too many requests"))
