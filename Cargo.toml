@@ -1,11 +1,15 @@
 [package]
-name = "zeyrho-queue"
+name = "zeyrho"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
 name = "chapter_1"
 path = "src/chapter_1/main.rs"
+
+[[bin]]
+name = "chapter_2"
+path = "src/chapter_2/main.rs"
 
 [dependencies]
 prost = "0.13.2"

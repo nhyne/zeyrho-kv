@@ -3,15 +3,13 @@ use std::ops::Deref;
 use std::sync::Mutex;
 use std::time;
 use tonic::{async_trait, Request, Response, Status, transport::Server};
-use crate::simple_queue::{DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, SizeRequest, SizeResponse};
-use crate::simple_queue::queue_server::{Queue, QueueServer};
+use zeyrho::simple_queue::simple_queue::{DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, SizeRequest, SizeResponse};
+use zeyrho::simple_queue::simple_queue::queue_server::{Queue, QueueServer};
 use tonic_reflection;
 use rand::prelude::*;
 
-mod simple_queue;
-
 mod proto {
-    tonic::include_proto!("simple_queue");
+    // tonic::include_proto!("simple_queue");
 
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
         tonic::include_file_descriptor_set!("simple_queue_descriptor");
@@ -52,7 +50,7 @@ impl Queue for SimpleQueue {
         grabbed_lock.push_back(request.get_ref().number);
 
         std::thread::sleep(time::Duration::from_millis(rand::thread_rng().gen_range(1..500)));
-        Ok(Response::new(simple_queue::EnqueueResponse {
+        Ok(Response::new(EnqueueResponse {
             confirmation: { "cool".to_string() }
         }))
     }
@@ -68,7 +66,7 @@ impl Queue for SimpleQueue {
             }
         }
 
-        Ok(Response::new(simple_queue::DequeueResponse {
+        Ok(Response::new(DequeueResponse {
             numbers : { return_vec }
         }))
 
