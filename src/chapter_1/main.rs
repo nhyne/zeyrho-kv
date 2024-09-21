@@ -9,8 +9,6 @@ use tonic_reflection;
 use rand::prelude::*;
 
 mod proto {
-    // tonic::include_proto!("simple_queue");
-
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
         tonic::include_file_descriptor_set!("simple_queue_descriptor");
 }
