@@ -1,3 +1,5 @@
+mod client;
+
 use nanoid::nanoid;
 use rand::prelude::*;
 use rmp_serde::{Deserializer, Serializer};
@@ -7,11 +9,10 @@ use std::error::Error;
 use std::fs::File;
 use std::io::{BufWriter, Read, Write};
 use std::ops::Deref;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::{fs, time};
 use std::sync::mpsc::{channel, Receiver};
 use std::thread::spawn;
-use tokio::sync::mpsc::Sender;
 use tonic::service::Interceptor;
 use tonic::{async_trait, transport::Server, Request, Response, Status};
 use tonic_reflection;
@@ -47,7 +48,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let handler = spawn(move || {
         for journaled in receiver {
-            let journal_result = process_journal_file(journaled, cloned_queue.clone());
+            // TODO: We should not be cloning the queue mutex every time we process a message, there should just be one owned queue mutex in this thread
+            let mut grabbed_lock = cloned_queue.lock().unwrap();
+
+            // I don't believe that this is good rust code but I'm not sure how else to just pass the contents of the lock...
+            let journal_result = process_journal_file(journaled, &mut *grabbed_lock);
             match journal_result {
                 Ok(_) => continue,
                 Err(e) => println!("error processing journal: {}", e),
@@ -110,7 +115,7 @@ fn journal_request(request: &EnqueueRequest) -> Result<String, std::io::Error> {
     Ok(id)
 }
 
-fn process_journal_file(file_name: String, queue: Arc<Mutex<VecDeque<i32>>>) -> Result<(), std::io::Error> {
+fn process_journal_file(file_name: String, queue: &mut VecDeque<i32>) -> Result<(), std::io::Error> {
 
     let mut buf = Vec::new();
     let mut file = File::open(&("data/".to_string() + &file_name)).expect("opening file failed");
@@ -121,8 +126,7 @@ fn process_journal_file(file_name: String, queue: Arc<Mutex<VecDeque<i32>>>) -> 
     let mut de = Deserializer::new(byte_slice);
     let request_body : EnqueueRequest = Deserialize::deserialize(&mut de).unwrap();
 
-    let mut grabbed_lock = queue.lock().unwrap();
-    grabbed_lock.push_back(request_body.number);
+    queue.push_back(request_body.number);
 
     fs::remove_file(&("data/".to_string() + &file_name))?;
     println!("number was: {}", request_body.number);
