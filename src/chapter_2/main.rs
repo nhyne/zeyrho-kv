@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
 use std::error::Error;
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use std::time;
@@ -10,6 +12,8 @@ use tonic_reflection;
 use rand::prelude::*;
 use tonic::service::Interceptor;
 use nanoid::nanoid;
+use serde::{Deserialize, Serialize};
+use rmp_serde::{Deserializer, Serializer};
 
 
 const DATA_DIR: &str = "data";
@@ -33,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .add_service(service)
-        .add_service(QueueServer::with_interceptor(queue_service, LoadShed{shed: Arc::new(Mutex::new(true))}))
+        .add_service(QueueServer::with_interceptor(queue_service, LoadShed{shed: Arc::new(Mutex::new(false))}))
         .serve(address)
         .await?;
     Ok(())
@@ -66,18 +70,26 @@ impl Interceptor for LoadShed {
 }
 
 
-// fn intercept(mut req: Request<()>) -> Result<Request<()>, Status> {
-//     println!("Intercepting request: {:?}", req);
-//
-//     Err(Status::resource_exhausted("too many requests"))
-//
-//     // Ok(req)
-// }
+
+fn journal_request(request: &EnqueueRequest) -> Result<String, std::io::Error> {
+
+    let id = nanoid!();
+
+    let mut buf = Vec::new();
+    request.serialize(&mut Serializer::new(&mut buf)).unwrap();
+
+    let mut file = File::create(&("data/".to_string() + &id)).expect("creating file failed");
+    file.write_all(&buf)?;
+    file.flush()?;
+
+    Ok(id)
+}
 
 #[async_trait]
 impl Queue for SimpleQueue {
     async fn enqueue(&self, request: Request<EnqueueRequest>) -> Result<Response<EnqueueResponse>, Status> {
         // TODO: Add jounaling here before writing to our queue
+        journal_request(request.get_ref()).map_err(|_| Status::internal("error journaling request"))?;
 
         std::thread::sleep(time::Duration::from_millis(rand::thread_rng().gen_range(1..500)));
         let mut grabbed_lock = self.queue.lock() .unwrap();
@@ -95,7 +107,7 @@ impl Queue for SimpleQueue {
         let num_to_pop = request.get_ref().number;
         let mut return_vec = Vec::new();
         let mut q = self.queue.lock().unwrap();
-        for n in 0..num_to_pop {
+        for _ in 0..num_to_pop {
             match q.pop_front() {
                 Some(n) => return_vec.push(n),
                 None => continue,
