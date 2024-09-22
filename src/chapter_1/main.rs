@@ -1,18 +1,19 @@
+use rand::prelude::*;
 use std::collections::VecDeque;
 use std::ops::Deref;
 use std::sync::Mutex;
 use std::time;
-use tonic::{async_trait, Request, Response, Status, transport::Server};
-use zeyrho::simple_queue::simple_queue::{DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, SizeRequest, SizeResponse};
-use zeyrho::simple_queue::simple_queue::queue_server::{Queue, QueueServer};
+use tonic::{async_trait, transport::Server, Request, Response, Status};
 use tonic_reflection;
-use rand::prelude::*;
+use zeyrho::simple_queue::simple_queue::queue_server::{Queue, QueueServer};
+use zeyrho::simple_queue::simple_queue::{
+    DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, SizeRequest, SizeResponse,
+};
 
 mod proto {
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
         tonic::include_file_descriptor_set!("simple_queue_descriptor");
 }
-
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -23,7 +24,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_v1()
         .unwrap();
 
-    let queue_service = SimpleQueue{queue: Mutex::new(VecDeque::new())};
+    let queue_service = SimpleQueue {
+        queue: Mutex::new(VecDeque::new()),
+    };
 
     Server::builder()
         .add_service(service)
@@ -34,26 +37,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 struct SimpleQueue {
-    queue: Mutex<VecDeque<i32>>
+    queue: Mutex<VecDeque<i32>>,
 }
-
 
 #[async_trait]
 impl Queue for SimpleQueue {
-    async fn enqueue(&self, request: Request<EnqueueRequest>) -> Result<Response<EnqueueResponse>, Status> {
-        std::thread::sleep(time::Duration::from_millis(rand::thread_rng().gen_range(1..500)));
-        let mut grabbed_lock = self.queue.lock() .unwrap();
+    async fn enqueue(
+        &self,
+        request: Request<EnqueueRequest>,
+    ) -> Result<Response<EnqueueResponse>, Status> {
+        std::thread::sleep(time::Duration::from_millis(
+            rand::thread_rng().gen_range(1..500),
+        ));
+        let mut grabbed_lock = self.queue.lock().unwrap();
 
-        std::thread::sleep(time::Duration::from_millis(rand::thread_rng().gen_range(1..2000)));
+        std::thread::sleep(time::Duration::from_millis(
+            rand::thread_rng().gen_range(1..2000),
+        ));
         grabbed_lock.push_back(request.get_ref().number);
 
-        std::thread::sleep(time::Duration::from_millis(rand::thread_rng().gen_range(1..500)));
+        std::thread::sleep(time::Duration::from_millis(
+            rand::thread_rng().gen_range(1..500),
+        ));
         Ok(Response::new(EnqueueResponse {
-            confirmation: { "cool".to_string() }
+            confirmation: { "cool".to_string() },
         }))
     }
 
-    async fn dequeue(&self, request: Request<DequeueRequest>) -> Result<Response<DequeueResponse>, Status> {
+    async fn dequeue(
+        &self,
+        request: Request<DequeueRequest>,
+    ) -> Result<Response<DequeueResponse>, Status> {
         let num_to_pop = request.get_ref().number;
         let mut return_vec = Vec::new();
         let mut q = self.queue.lock().unwrap();
@@ -65,16 +79,13 @@ impl Queue for SimpleQueue {
         }
 
         Ok(Response::new(DequeueResponse {
-            numbers : { return_vec }
+            numbers: { return_vec },
         }))
-
     }
 
     async fn size(&self, request: Request<SizeRequest>) -> Result<Response<SizeResponse>, Status> {
         let s = self.queue.lock().unwrap().len() as i32;
 
-        Ok(Response::new(SizeResponse {
-            size: { s }
-        }))
+        Ok(Response::new(SizeResponse { size: { s } }))
     }
 }

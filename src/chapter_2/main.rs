@@ -1,3 +1,7 @@
+use nanoid::nanoid;
+use rand::prelude::*;
+use rmp_serde::{Deserializer, Serializer};
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fs::File;
@@ -5,16 +9,13 @@ use std::io::{BufWriter, Write};
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use std::time;
-use tonic::{async_trait, Request, Response, Status, transport::Server};
-use zeyrho::simple_queue::simple_queue::{DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, SizeRequest, SizeResponse};
-use zeyrho::simple_queue::simple_queue::queue_server::{Queue, QueueServer};
-use tonic_reflection;
-use rand::prelude::*;
 use tonic::service::Interceptor;
-use nanoid::nanoid;
-use serde::{Deserialize, Serialize};
-use rmp_serde::{Deserializer, Serializer};
-
+use tonic::{async_trait, transport::Server, Request, Response, Status};
+use tonic_reflection;
+use zeyrho::simple_queue::simple_queue::queue_server::{Queue, QueueServer};
+use zeyrho::simple_queue::simple_queue::{
+    DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, SizeRequest, SizeResponse,
+};
 
 const DATA_DIR: &str = "data";
 
@@ -22,7 +23,6 @@ mod proto {
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
         tonic::include_file_descriptor_set!("simple_queue_descriptor");
 }
-
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -33,18 +33,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_v1()
         .unwrap();
 
-    let queue_service = SimpleQueue{queue: Mutex::new(VecDeque::new())};
+    let queue_service = SimpleQueue {
+        queue: Mutex::new(VecDeque::new()),
+    };
 
     Server::builder()
         .add_service(service)
-        .add_service(QueueServer::with_interceptor(queue_service, LoadShed{shed: Arc::new(Mutex::new(false))}))
+        .add_service(QueueServer::with_interceptor(
+            queue_service,
+            LoadShed {
+                shed: Arc::new(Mutex::new(false)),
+            },
+        ))
         .serve(address)
         .await?;
     Ok(())
 }
 
 struct SimpleQueue {
-    queue: Mutex<VecDeque<i32>>
+    queue: Mutex<VecDeque<i32>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -69,10 +76,7 @@ impl Interceptor for LoadShed {
     }
 }
 
-
-
 fn journal_request(request: &EnqueueRequest) -> Result<String, std::io::Error> {
-
     let id = nanoid!();
 
     let mut buf = Vec::new();
@@ -87,23 +91,36 @@ fn journal_request(request: &EnqueueRequest) -> Result<String, std::io::Error> {
 
 #[async_trait]
 impl Queue for SimpleQueue {
-    async fn enqueue(&self, request: Request<EnqueueRequest>) -> Result<Response<EnqueueResponse>, Status> {
+    async fn enqueue(
+        &self,
+        request: Request<EnqueueRequest>,
+    ) -> Result<Response<EnqueueResponse>, Status> {
         // TODO: Add jounaling here before writing to our queue
-        journal_request(request.get_ref()).map_err(|_| Status::internal("error journaling request"))?;
+        journal_request(request.get_ref())
+            .map_err(|_| Status::internal("error journaling request"))?;
 
-        std::thread::sleep(time::Duration::from_millis(rand::thread_rng().gen_range(1..500)));
-        let mut grabbed_lock = self.queue.lock() .unwrap();
+        std::thread::sleep(time::Duration::from_millis(
+            rand::thread_rng().gen_range(1..500),
+        ));
+        let mut grabbed_lock = self.queue.lock().unwrap();
 
-        std::thread::sleep(time::Duration::from_millis(rand::thread_rng().gen_range(1..2000)));
+        std::thread::sleep(time::Duration::from_millis(
+            rand::thread_rng().gen_range(1..2000),
+        ));
         grabbed_lock.push_back(request.get_ref().number);
 
-        std::thread::sleep(time::Duration::from_millis(rand::thread_rng().gen_range(1..500)));
+        std::thread::sleep(time::Duration::from_millis(
+            rand::thread_rng().gen_range(1..500),
+        ));
         Ok(Response::new(EnqueueResponse {
-            confirmation: { "cool".to_string() }
+            confirmation: { "cool".to_string() },
         }))
     }
 
-    async fn dequeue(&self, request: Request<DequeueRequest>) -> Result<Response<DequeueResponse>, Status> {
+    async fn dequeue(
+        &self,
+        request: Request<DequeueRequest>,
+    ) -> Result<Response<DequeueResponse>, Status> {
         let num_to_pop = request.get_ref().number;
         let mut return_vec = Vec::new();
         let mut q = self.queue.lock().unwrap();
@@ -115,16 +132,13 @@ impl Queue for SimpleQueue {
         }
 
         Ok(Response::new(DequeueResponse {
-            numbers : { return_vec }
+            numbers: { return_vec },
         }))
-
     }
 
     async fn size(&self, request: Request<SizeRequest>) -> Result<Response<SizeResponse>, Status> {
         let s = self.queue.lock().unwrap().len() as i32;
 
-        Ok(Response::new(SizeResponse {
-            size: { s }
-        }))
+        Ok(Response::new(SizeResponse { size: { s } }))
     }
 }
