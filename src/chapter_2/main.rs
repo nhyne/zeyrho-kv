@@ -5,10 +5,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, Read, Write};
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
-use std::time;
+use std::{fs, time};
 use tonic::service::Interceptor;
 use tonic::{async_trait, transport::Server, Request, Response, Status};
 use tonic_reflection;
@@ -89,6 +89,23 @@ fn journal_request(request: &EnqueueRequest) -> Result<String, std::io::Error> {
     Ok(id)
 }
 
+fn process_journal_file(file_name: String) -> Result<(), std::io::Error> {
+
+    let mut buf = Vec::new();
+    let mut file = File::open(&("data/".to_string() + &file_name)).expect("opening file failed");
+    file.read_to_end(&mut buf)?;
+
+    let byte_slice : &[u8] = &buf;
+
+    let mut de = Deserializer::new(byte_slice);
+    let request_body : EnqueueRequest = Deserialize::deserialize(&mut de).unwrap();
+
+    fs::remove_file(&("data/".to_string() + &file_name))?;
+    println!("number was: {}", request_body.number);
+    Ok(())
+
+}
+
 #[async_trait]
 impl Queue for SimpleQueue {
     async fn enqueue(
@@ -96,7 +113,7 @@ impl Queue for SimpleQueue {
         request: Request<EnqueueRequest>,
     ) -> Result<Response<EnqueueResponse>, Status> {
         // TODO: Add jounaling here before writing to our queue
-        journal_request(request.get_ref())
+        let journal_id = journal_request(request.get_ref())
             .map_err(|_| Status::internal("error journaling request"))?;
 
         std::thread::sleep(time::Duration::from_millis(
@@ -112,6 +129,9 @@ impl Queue for SimpleQueue {
         std::thread::sleep(time::Duration::from_millis(
             rand::thread_rng().gen_range(1..500),
         ));
+
+        process_journal_file(journal_id)?;
+
         Ok(Response::new(EnqueueResponse {
             confirmation: { "cool".to_string() },
         }))

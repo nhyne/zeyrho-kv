@@ -4,7 +4,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
         .out_dir("./src/simple_queue")
         .file_descriptor_set_path(out_dir.join("simple_queue_descriptor.bin"))
-        .type_attribute(".", "#[derive(serde::Serialize)]")
+        .type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]")
         .compile(&["./protos/simple_queue.proto"], &["proto"])?;
     Ok(())
 }
