@@ -9,6 +9,9 @@ use std::io::{BufWriter, Read, Write};
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use std::{fs, time};
+use std::sync::mpsc::{channel, Receiver};
+use std::thread::spawn;
+use tokio::sync::mpsc::Sender;
 use tonic::service::Interceptor;
 use tonic::{async_trait, transport::Server, Request, Response, Status};
 use tonic_reflection;
@@ -28,14 +31,29 @@ mod proto {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let address = "127.0.0.1:8080".parse().unwrap();
 
+    let (sender, receiver) = channel();
+
     let service = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)
         .build_v1()
         .unwrap();
 
+    let queue =Arc::new(Mutex::new(VecDeque::new()));
+    let cloned_queue = queue.clone();
     let queue_service = SimpleQueue {
-        queue: Mutex::new(VecDeque::new()),
+        queue,
+        sender,
     };
+
+    let handler = spawn(move || {
+        for journaled in receiver {
+            let journal_result = process_journal_file(journaled, cloned_queue.clone());
+            match journal_result {
+                Ok(_) => continue,
+                Err(e) => println!("error processing journal: {}", e),
+            }
+        }
+    });
 
     Server::builder()
         .add_service(service)
@@ -47,11 +65,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ))
         .serve(address)
         .await?;
+
+
     Ok(())
 }
 
 struct SimpleQueue {
-    queue: Mutex<VecDeque<i32>>,
+    queue: Arc<Mutex<VecDeque<i32>>>,
+    sender: std::sync::mpsc::Sender<String>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -89,7 +110,7 @@ fn journal_request(request: &EnqueueRequest) -> Result<String, std::io::Error> {
     Ok(id)
 }
 
-fn process_journal_file(file_name: String) -> Result<(), std::io::Error> {
+fn process_journal_file(file_name: String, queue: Arc<Mutex<VecDeque<i32>>>) -> Result<(), std::io::Error> {
 
     let mut buf = Vec::new();
     let mut file = File::open(&("data/".to_string() + &file_name)).expect("opening file failed");
@@ -99,6 +120,9 @@ fn process_journal_file(file_name: String) -> Result<(), std::io::Error> {
 
     let mut de = Deserializer::new(byte_slice);
     let request_body : EnqueueRequest = Deserialize::deserialize(&mut de).unwrap();
+
+    let mut grabbed_lock = queue.lock().unwrap();
+    grabbed_lock.push_back(request_body.number);
 
     fs::remove_file(&("data/".to_string() + &file_name))?;
     println!("number was: {}", request_body.number);
@@ -116,24 +140,11 @@ impl Queue for SimpleQueue {
         let journal_id = journal_request(request.get_ref())
             .map_err(|_| Status::internal("error journaling request"))?;
 
-        std::thread::sleep(time::Duration::from_millis(
-            rand::thread_rng().gen_range(1..500),
-        ));
-        let mut grabbed_lock = self.queue.lock().unwrap();
-
-        std::thread::sleep(time::Duration::from_millis(
-            rand::thread_rng().gen_range(1..2000),
-        ));
-        grabbed_lock.push_back(request.get_ref().number);
-
-        std::thread::sleep(time::Duration::from_millis(
-            rand::thread_rng().gen_range(1..500),
-        ));
-
-        process_journal_file(journal_id)?;
+        let cloned_id = journal_id.clone();
+        self.sender.send(journal_id).map_err(|e| Status::internal("error queueing journal for processing"))?;
 
         Ok(Response::new(EnqueueResponse {
-            confirmation: { "cool".to_string() },
+            confirmation: { cloned_id },
         }))
     }
 
