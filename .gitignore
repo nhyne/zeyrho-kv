@@ -3,5 +3,6 @@
 .direnv
 
 data/*
+store/*
 
 maelstrom
