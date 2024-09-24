@@ -22,6 +22,8 @@
             gnumake
             gcc
             ghz
+            gnuplot
+            graphviz
             grpcurl
             protobuf
             rustup
