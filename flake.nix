@@ -17,6 +17,7 @@
         pkgs = nixpkgs.legacyPackages.${system};
       in rec {
         devShell = pkgs.mkShell {
+#          inherit (pkgs.stdenv.hostPlatform) isDarwin;
           buildInputs = with pkgs; [
             cargo
             gnumake
@@ -29,6 +30,9 @@
             rustup
           ];
 
+          shellHook = if pkgs.stdenv.hostPlatform.isDarwin then ''
+            export LIBRARY_PATH=$LIBRARY_PATH:$(brew --prefix)/lib:$(brew --prefix)/opt/libiconv/lib
+          '' else "";
         };
       }
   
