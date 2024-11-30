@@ -22,8 +22,8 @@ pub struct GetRequest {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct GetResponse {
-    #[prost(int32, tag = "1")]
-    pub value: i32,
+    #[prost(int32, optional, tag = "1")]
+    pub value: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]

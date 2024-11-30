@@ -18,7 +18,7 @@ use tonic::{async_trait, transport::Server, Request, Response, Status};
 use tonic_reflection;
 use zeyrho::kv_store::kv_store::kv_store_server::{KvStore, KvStoreServer};
 use zeyrho::kv_store::kv_store::{
-    GetResponse, GetRequest, SetRequest, SetResponse, DeleteRequest, DeleteResponse
+    GetResponse, GetRequest, SetRequest, SetResponse, DeleteRequest, DeleteResponse,
 };
 
 const DATA_DIR: &str = "data";
@@ -39,10 +39,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_v1()
         .unwrap();
 
-    let queue =Arc::new(Mutex::new(HashMap::new()));
+    let queue = Arc::new(Mutex::new(HashMap::new()));
     let cloned_queue = queue.clone();
     let queue_service = SimpleKvStore {
-        queue,
+        hash_map: queue,
         sender,
     };
 
@@ -76,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 struct SimpleKvStore {
-    queue: Arc<Mutex<HashMap<String, i32>>>,
+    hash_map: Arc<Mutex<HashMap<String, i32>>>,
     sender: std::sync::mpsc::Sender<String>,
 }
 
@@ -116,15 +116,14 @@ fn journal_request(request: &SetRequest) -> Result<String, std::io::Error> {
 }
 
 fn process_journal_file(file_name: String, hash_map: &mut HashMap<String, i32>) -> Result<(), std::io::Error> {
-
     let mut buf = Vec::new();
     let mut file = File::open(&("data/".to_string() + &file_name)).expect("opening file failed");
     file.read_to_end(&mut buf)?;
 
-    let byte_slice : &[u8] = &buf;
+    let byte_slice: &[u8] = &buf;
 
     let mut de = Deserializer::new(byte_slice);
-    let request_body : SetRequest = Deserialize::deserialize(&mut de).unwrap();
+    let request_body: SetRequest = Deserialize::deserialize(&mut de).unwrap();
 
     let key_name = request_body.key.clone();
     hash_map.insert(request_body.key, request_body.value);
@@ -132,55 +131,54 @@ fn process_journal_file(file_name: String, hash_map: &mut HashMap<String, i32>) 
     fs::remove_file(&("data/".to_string() + &file_name))?;
     println!("key was: {}, value was: {}", key_name, request_body.value);
     Ok(())
-
 }
 
 #[async_trait]
 impl KvStore for SimpleKvStore {
     async fn set(&self, request: Request<SetRequest>) -> Result<Response<SetResponse>, Status> {
-        todo!()
+        let journal_id = journal_request(request.get_ref())
+            .map_err(|_| Status::internal("error journaling request"))?;
+
+        self.sender.send(journal_id).map_err(|e| Status::internal("error queueing journal for processing"))?;
+
+        Ok(Response::new(SetResponse {
+            confirmation: true,
+        }))
     }
 
     async fn get(&self, request: Request<GetRequest>) -> Result<Response<GetResponse>, Status> {
-        todo!()
+        let mut q = self.hash_map.lock().unwrap();
+
+        let val = q.get(&request.get_ref().key);
+
+        Ok(Response::new(GetResponse {
+            value: val.copied(),
+        }))
     }
 
     async fn delete(&self, request: Request<DeleteRequest>) -> Result<Response<DeleteResponse>, Status> {
-        todo!()
+        let mut q = self.hash_map.lock().unwrap();
+
+        let val = q.remove(&request.get_ref().key);
+
+        Ok(Response::new(DeleteResponse {
+            confirmation: match val {
+                None => false,
+                Some(_) => true,
+            }
+        }))
     }
     // async fn enqueue(
     //     &self,
     //     request: Request<EnqueueRequest>,
     // ) -> Result<Response<EnqueueResponse>, Status> {
     //     // TODO: Add jounaling here before writing to our queue
-    //     let journal_id = journal_request(request.get_ref())
-    //         .map_err(|_| Status::internal("error journaling request"))?;
-    //
-    //     let cloned_id = journal_id.clone();
-    //     self.sender.send(journal_id).map_err(|e| Status::internal("error queueing journal for processing"))?;
-    //
-    //     Ok(Response::new(EnqueueResponse {
-    //         confirmation: { cloned_id },
-    //     }))
     // }
     //
     // async fn dequeue(
     //     &self,
     //     request: Request<DequeueRequest>,
     // ) -> Result<Response<DequeueResponse>, Status> {
-    //     let num_to_pop = request.get_ref().number;
-    //     let mut return_vec = Vec::new();
-    //     let mut q = self.queue.lock().unwrap();
-    //     for _ in 0..num_to_pop {
-    //         match q.pop_front() {
-    //             Some(n) => return_vec.push(n),
-    //             None => continue,
-    //         }
-    //     }
-    //
-    //     Ok(Response::new(DequeueResponse {
-    //         numbers: { return_vec },
-    //     }))
     // }
     //
     // async fn size(&self, request: Request<SizeRequest>) -> Result<Response<SizeResponse>, Status> {

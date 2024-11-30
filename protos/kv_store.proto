@@ -19,7 +19,7 @@ message GetRequest {
 }
 
 message GetResponse {
-  int32 value = 1;
+  optional int32 value = 1;
 }
 
 message DeleteRequest {
