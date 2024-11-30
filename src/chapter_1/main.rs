@@ -1,18 +1,16 @@
 use rand::prelude::*;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::ops::Deref;
 use std::sync::Mutex;
 use std::time;
 use tonic::{async_trait, transport::Server, Request, Response, Status};
 use tonic_reflection;
-use zeyrho::simple_queue::simple_queue::queue_server::{Queue, QueueServer};
-use zeyrho::simple_queue::simple_queue::{
-    DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, SizeRequest, SizeResponse,
-};
+use zeyrho::kv_store::kv_store::kv_store_server::{KvStore, KvStoreServer};
+use zeyrho::kv_store::kv_store::{DeleteRequest, DeleteResponse, GetRequest, GetResponse, SetRequest, SetResponse};
 
 mod proto {
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
-        tonic::include_file_descriptor_set!("simple_queue_descriptor");
+        tonic::include_file_descriptor_set!("kv_store_descriptor");
 }
 
 #[tokio::main]
@@ -24,68 +22,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_v1()
         .unwrap();
 
-    let queue_service = SimpleQueue {
-        queue: Mutex::new(VecDeque::new()),
+    let kv_store_service = SimpleKVStore {
+        dictionary: Mutex::new(HashMap::new()),
     };
 
     Server::builder()
         .add_service(service)
-        .add_service(QueueServer::new(queue_service))
+        .add_service(KvStoreServer::new(kv_store_service))
         .serve(address)
         .await?;
     Ok(())
 }
 
-struct SimpleQueue {
-    queue: Mutex<VecDeque<i32>>,
+struct SimpleKVStore {
+    dictionary: Mutex<HashMap<String, i32>>,
 }
 
 #[async_trait]
-impl Queue for SimpleQueue {
-    async fn enqueue(
-        &self,
-        request: Request<EnqueueRequest>,
-    ) -> Result<Response<EnqueueResponse>, Status> {
-        std::thread::sleep(time::Duration::from_millis(
-            rand::thread_rng().gen_range(1..500),
-        ));
-        let mut grabbed_lock = self.queue.lock().unwrap();
-
-        std::thread::sleep(time::Duration::from_millis(
-            rand::thread_rng().gen_range(1..2000),
-        ));
-        grabbed_lock.push_back(request.get_ref().number);
-
-        std::thread::sleep(time::Duration::from_millis(
-            rand::thread_rng().gen_range(1..500),
-        ));
-        Ok(Response::new(EnqueueResponse {
-            confirmation: { "cool".to_string() },
-        }))
+impl KvStore for SimpleKVStore {
+    async fn set(&self, request: Request<SetRequest>) -> Result<Response<SetResponse>, Status> {
+        todo!()
     }
 
-    async fn dequeue(
-        &self,
-        request: Request<DequeueRequest>,
-    ) -> Result<Response<DequeueResponse>, Status> {
-        let num_to_pop = request.get_ref().number;
-        let mut return_vec = Vec::new();
-        let mut q = self.queue.lock().unwrap();
-        for n in 0..num_to_pop {
-            match q.pop_front() {
-                Some(n) => return_vec.push(n),
-                None => continue,
-            }
-        }
-
-        Ok(Response::new(DequeueResponse {
-            numbers: { return_vec },
-        }))
+    async fn get(&self, request: Request<GetRequest>) -> Result<Response<GetResponse>, Status> {
+        todo!()
     }
 
-    async fn size(&self, request: Request<SizeRequest>) -> Result<Response<SizeResponse>, Status> {
-        let s = self.queue.lock().unwrap().len() as i32;
-
-        Ok(Response::new(SizeResponse { size: { s } }))
+    async fn delete(&self, request: Request<DeleteRequest>) -> Result<Response<DeleteResponse>, Status> {
+        todo!()
     }
 }

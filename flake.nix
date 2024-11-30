@@ -1,5 +1,5 @@
 {
-  description = "Shell for grocery";
+  description = "Shell for distributed systems fun";
 
   inputs = {
     nixpkgs.url = "nixpkgs/master";
