@@ -1,0 +1,31 @@
+syntax = "proto3";
+package queue;
+
+service Queue {
+  rpc Enqueue (EnqueueRequest) returns (EnqueueResponse);
+  rpc Dequeue (DequeueRequest) returns (DequeueResponse);
+  rpc Size (SizeRequest) returns (SizeResponse);
+}
+
+message EnqueueRequest {
+  int32 number = 1;
+}
+
+
+message EnqueueResponse {
+  string confirmation = 1;
+}
+
+message DequeueRequest {
+  int32 number = 1;
+}
+
+message DequeueResponse {
+  repeated int32 numbers = 1;
+}
+
+message SizeRequest {}
+
+message SizeResponse {
+  int32 size = 1;
+}

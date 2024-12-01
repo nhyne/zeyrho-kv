@@ -5,8 +5,8 @@ use std::sync::Mutex;
 use std::time;
 use tonic::{async_trait, transport::Server, Request, Response, Status};
 use tonic_reflection;
-use zeyrho::kv_store::kv_store::kv_store_server::{KvStore, KvStoreServer};
-use zeyrho::kv_store::kv_store::{DeleteRequest, DeleteResponse, GetRequest, GetResponse, SetRequest, SetResponse};
+use zeyrho::zeyrho::kv_store::kv_store_server::{KvStore, KvStoreServer};
+use zeyrho::zeyrho::kv_store::{DeleteRequest, DeleteResponse, GetRequest, GetResponse, SetRequest, SetResponse};
 
 mod proto {
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =

@@ -16,8 +16,8 @@ use std::thread::spawn;
 use tonic::service::Interceptor;
 use tonic::{async_trait, transport::Server, Request, Response, Status};
 use tonic_reflection;
-use zeyrho::kv_store::kv_store::kv_store_server::{KvStore, KvStoreServer};
-use zeyrho::kv_store::kv_store::{
+use zeyrho::zeyrho::kv_store::kv_store_server::{KvStore, KvStoreServer};
+use zeyrho::zeyrho::kv_store::{
     GetResponse, GetRequest, SetRequest, SetResponse, DeleteRequest, DeleteResponse,
 };
 
@@ -70,7 +70,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ))
         .serve(address)
         .await?;
-
 
     Ok(())
 }
@@ -168,22 +167,4 @@ impl KvStore for SimpleKvStore {
             }
         }))
     }
-    // async fn enqueue(
-    //     &self,
-    //     request: Request<EnqueueRequest>,
-    // ) -> Result<Response<EnqueueResponse>, Status> {
-    //     // TODO: Add jounaling here before writing to our queue
-    // }
-    //
-    // async fn dequeue(
-    //     &self,
-    //     request: Request<DequeueRequest>,
-    // ) -> Result<Response<DequeueResponse>, Status> {
-    // }
-    //
-    // async fn size(&self, request: Request<SizeRequest>) -> Result<Response<SizeResponse>, Status> {
-    //     let s = self.queue.lock().unwrap().len() as i32;
-    //
-    //     Ok(Response::new(SizeResponse { size: { s } }))
-    // }
 }
