@@ -4,16 +4,24 @@ version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "chapter_1"
-path = "src/chapter_1/main.rs"
+name = "queue_1"
+path = "src/queue/chapter_1/main.rs"
 
 [[bin]]
-name = "chapter_2"
-path = "src/chapter_2/main.rs"
+name = "queue_2"
+path = "src/queue/chapter_2/main.rs"
+
+[[bin]]
+name = "kv_1"
+path = "src/kv/chapter_1/main.rs"
+
+[[bin]]
+name = "kv_2"
+path = "src/kv/chapter_2/main.rs"
 
 [[bin]]
 name = "echo"
-path = "src/echo/main.rs"
+path = "src/mael/echo/main.rs"
 
 [dependencies]
 prost = "0.13.2"
