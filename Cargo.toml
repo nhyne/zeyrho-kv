@@ -12,6 +12,10 @@ name = "queue_2"
 path = "src/queue/chapter_2/main.rs"
 
 [[bin]]
+name = "queue_3"
+path = "src/queue/chapter_3/main.rs"
+
+[[bin]]
 name = "kv_1"
 path = "src/kv/chapter_1/main.rs"
 

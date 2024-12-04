@@ -32,6 +32,22 @@ pub struct SizeResponse {
     #[prost(int32, tag = "1")]
     pub size: i32,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct ReplicateDataRequest {
+    #[prost(uint64, tag = "1")]
+    pub offset: u64,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReplicateDataResponse {
+    #[prost(string, tag = "1")]
+    pub message_id: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "2")]
+    pub message_data: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint64, tag = "3")]
+    pub next_offset: u64,
+}
 /// Generated client implementations.
 pub mod queue_client {
     #![allow(
@@ -183,6 +199,31 @@ pub mod queue_client {
             req.extensions_mut().insert(GrpcMethod::new("queue.Queue", "Size"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn replicate_data(
+            &mut self,
+            request: impl tonic::IntoStreamingRequest<
+                Message = super::ReplicateDataRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::ReplicateDataResponse>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/queue.Queue/ReplicateData",
+            );
+            let mut req = request.into_streaming_request();
+            req.extensions_mut().insert(GrpcMethod::new("queue.Queue", "ReplicateData"));
+            self.inner.streaming(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -210,6 +251,19 @@ pub mod queue_server {
             &self,
             request: tonic::Request<super::SizeRequest>,
         ) -> std::result::Result<tonic::Response<super::SizeResponse>, tonic::Status>;
+        /// Server streaming response type for the ReplicateData method.
+        type ReplicateDataStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::ReplicateDataResponse, tonic::Status>,
+            >
+            + std::marker::Send
+            + 'static;
+        async fn replicate_data(
+            &self,
+            request: tonic::Request<tonic::Streaming<super::ReplicateDataRequest>>,
+        ) -> std::result::Result<
+            tonic::Response<Self::ReplicateDataStream>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct QueueServer<T> {
@@ -412,6 +466,54 @@ pub mod queue_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/queue.Queue/ReplicateData" => {
+                    #[allow(non_camel_case_types)]
+                    struct ReplicateDataSvc<T: Queue>(pub Arc<T>);
+                    impl<
+                        T: Queue,
+                    > tonic::server::StreamingService<super::ReplicateDataRequest>
+                    for ReplicateDataSvc<T> {
+                        type Response = super::ReplicateDataResponse;
+                        type ResponseStream = T::ReplicateDataStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                tonic::Streaming<super::ReplicateDataRequest>,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Queue>::replicate_data(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ReplicateDataSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

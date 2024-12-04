@@ -1,14 +1,15 @@
 use rand::prelude::*;
 use std::collections::VecDeque;
 use std::ops::Deref;
+use std::pin::Pin;
 use std::sync::Mutex;
 use std::time;
-use tonic::{async_trait, transport::Server, Request, Response, Status};
+use tonic::{async_trait, transport::Server, Request, Response, Status, Streaming};
+use tonic::codegen::tokio_stream::Stream;
+use tonic::codegen::tokio_stream::wrappers::ReceiverStream;
 use tonic_reflection;
 use zeyrho::zeyrho::queue::queue_server::{Queue, QueueServer};
-use zeyrho::zeyrho::queue::{
-    DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, SizeRequest, SizeResponse,
-};
+use zeyrho::zeyrho::queue::{DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, ReplicateDataRequest, ReplicateDataResponse, SizeRequest, SizeResponse};
 
 mod proto {
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
@@ -87,5 +88,11 @@ impl Queue for SimpleQueue {
         let s = self.queue.lock().unwrap().len() as i32;
 
         Ok(Response::new(SizeResponse { size: { s } }))
+    }
+
+    type ReplicateDataStream = Pin<Box<dyn Stream<Item = Result<ReplicateDataResponse, Status>> + Send>>;
+
+    async fn replicate_data(&self, request: Request<Streaming<ReplicateDataRequest>>) -> Result<Response<Self::ReplicateDataStream>, Status> {
+        todo!()
     }
 }

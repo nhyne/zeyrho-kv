@@ -5,6 +5,7 @@ service Queue {
   rpc Enqueue (EnqueueRequest) returns (EnqueueResponse);
   rpc Dequeue (DequeueRequest) returns (DequeueResponse);
   rpc Size (SizeRequest) returns (SizeResponse);
+  rpc ReplicateData (stream ReplicateDataRequest) returns (stream ReplicateDataResponse);
 }
 
 message EnqueueRequest {
@@ -28,4 +29,14 @@ message SizeRequest {}
 
 message SizeResponse {
   int32 size = 1;
+}
+
+message ReplicateDataRequest {
+  uint64 offset = 1;
+}
+
+message ReplicateDataResponse {
+  string messageID = 1;
+  bytes messageData = 2;
+  uint64 nextOffset = 3;
 }
