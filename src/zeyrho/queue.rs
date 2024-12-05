@@ -38,6 +38,8 @@ pub struct ReplicateDataRequest {
     #[prost(uint64, tag = "1")]
     pub offset: u64,
 }
+/// this is going to need to be more efficient than single messages all at once
+/// should probably be able to request a dump of the current DB (or something similar) to start and then initiate the replication
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReplicateDataResponse {

@@ -2,7 +2,8 @@ use rand::prelude::*;
 use std::collections::VecDeque;
 use std::ops::Deref;
 use std::pin::Pin;
-use std::sync::Mutex;
+use tokio::sync::mpsc;
+use std::sync::{Mutex};
 use std::time;
 use tonic::{async_trait, transport::Server, Request, Response, Status, Streaming};
 use tonic::codegen::tokio_stream::Stream;
@@ -90,9 +91,29 @@ impl Queue for SimpleQueue {
         Ok(Response::new(SizeResponse { size: { s } }))
     }
 
-    type ReplicateDataStream = Pin<Box<dyn Stream<Item = Result<ReplicateDataResponse, Status>> + Send>>;
+    type ReplicateDataStream = Pin<Box<dyn Stream<Item=Result<ReplicateDataResponse, Status>> + Send>>;
 
     async fn replicate_data(&self, request: Request<Streaming<ReplicateDataRequest>>) -> Result<Response<Self::ReplicateDataStream>, Status> {
-        todo!()
-    }
+        let (tx, rx) = mpsc::channel(10);
+
+        let _ = tokio::spawn(async move {
+            for i in 1..10 {
+                let message = ReplicateDataResponse {
+                    message_id: "cool".to_string(),
+                    message_data: vec![],
+                    next_offset: i,
+                };
+
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+
+                if tx.send(Ok(message)).await.is_err() {
+                    println!("Client disconnected");
+                    break;
+                }
+            }
+        });
+
+    let outbound = ReceiverStream::new(rx);
+    Ok(Response::new(Box::pin(outbound) as Self::ReplicateDataStream))
+}
 }
