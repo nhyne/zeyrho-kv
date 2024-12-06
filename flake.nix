@@ -19,7 +19,6 @@
         devShell = pkgs.mkShell {
 #          inherit (pkgs.stdenv.hostPlatform) isDarwin;
           buildInputs = with pkgs; [
-            cargo
             gnumake
             gcc
             ghz
