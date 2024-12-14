@@ -13,7 +13,7 @@ enum Node<K: Ord + std::fmt::Debug, V: std::fmt::Debug> {
     },
     NonLeaf {
         separators: Vec<Rc<K>>,
-        children: Vec<Option<Rc<RefCell<Node<K, V>>>>>,
+        children: Vec<Rc<RefCell<Node<K, V>>>>,
     },
 }
 
@@ -51,20 +51,19 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
     }
 
     pub fn insert(&mut self, key: K, value: V) {
-        let (new_separator, new_child) = self.insert_internal(&self.root, Rc::new(key), value);
 
-        if let Some(new_separator) = new_separator {
+        if let Some((new_separator, new_child)) = self.insert_internal(self.root.clone(), Rc::new(key), value) {
             let new_root = Rc::new(RefCell::new(Node::new_non_leaf()));
             if let Node::NonLeaf { separators, children } = &mut *new_root.borrow_mut() {
                 separators.push(new_separator);
-                children.push(self.root.take());
+                children.push(Rc::clone(&self.root));
                 children.push(new_child);
             }
             self.root = new_root;
         }
     }
 
-    fn insert_internal(&mut self, node: &Rc<RefCell<Node<K, V>>>, key: Rc<K>, value: V) -> (Option<Rc<K>>, Option<Rc<RefCell<Node<K, V>>>>) {
+    fn insert_internal(&mut self, node: Rc<RefCell<Node<K, V>>>, key: Rc<K>, value: V) -> Option<(Rc<K>, Rc<RefCell<Node<K, V>>>)> {
         let mut node_ref = node.borrow_mut();
         match &mut *node_ref {
             Node::Leaf { keys, values, next, .. } => {
@@ -73,7 +72,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                 values.insert(pos, value);
 
                 if keys.len() < DEGREE {
-                    return (None, None);
+                    return None;
                 }
 
                 let mid = keys.len() / 2;
@@ -82,26 +81,23 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                     *new_keys = keys.split_off(mid);
                     *new_values = values.split_off(mid);
                     *new_next = next.take();
-                    *new_prev = Some(Rc::clone(node));
+                    *new_prev = Some(Rc::clone(&node));
                 }
 
-                if let Node::Leaf { next, .. } = node_ref {
-                    *next = Some(Rc::clone(&new_node));
-                }
+                *next = Some(Rc::clone(&new_node));
 
-                return (Some(keys[mid].clone()), Some(new_node));
+                return Some((keys[mid].clone(), new_node));
             }
             Node::NonLeaf { separators, children } => {
                 let pos = separators.iter().position(|k| k.as_ref() > key.as_ref()).unwrap_or(separators.len());
-                let child = children[pos].as_ref().unwrap();
-                let (new_separator, new_child) = self.insert_internal(child, key, value);
+                let child = children[pos].clone();
 
-                if let Some(new_separator) = new_separator {
+                if let Some( (new_separator, new_child)) = self.insert_internal(child, key, value) {
                     separators.insert(pos, new_separator);
                     children.insert(pos + 1, new_child);
 
                     if separators.len() < DEGREE {
-                        return (None, None);
+                        return None;
                     }
 
                     let mid = separators.len() / 2;
@@ -111,10 +107,10 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                         *new_children = children.split_off(mid + 1);
                     }
 
-                    return (Some(separators.pop().unwrap()), Some(new_node));
+                    return Some((separators.pop().unwrap(), new_node));
                 }
 
-                (None, None)
+                None
             }
         }
     }
