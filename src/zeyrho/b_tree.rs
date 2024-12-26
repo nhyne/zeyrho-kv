@@ -105,7 +105,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                     *new_prev = Some(Rc::clone(&node));
                 }
 
-                // push twice b/c we
+                // push twice b/c we need to fill the vec
                 key_vals.push(None); key_vals.push(None);
 
                 *next = Some(Rc::clone(&new_node));
@@ -146,7 +146,6 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    const DEGREE: usize = 3;
 
 
     fn create_tree() -> BPlusTree<i32, String> {
@@ -162,8 +161,21 @@ mod tests {
         }
 
         let root = tree.root.as_ref().unwrap().borrow();
-        if let Node::Link { separators, .. } = &*root {
-            assert_eq!(separators.len(), 3);
+        println!("{:?}", root);
+
+        if let Node::Leaf { key_vals, .. } = &*root {
+            println!("{:?}", key_vals);
+            assert_eq!(key_vals.len(), 3);
+            let mut i = 0;
+            key_vals.iter().for_each(|x| {
+                match x {
+                    None => {},
+                    Some((y, _)) => {
+                        assert_eq!(y.as_ref(), &i);
+                        i += 1;
+                    }
+                }
+            })
         }
     }
 }
