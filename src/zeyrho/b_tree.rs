@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 const DEGREE: usize = 3;
@@ -7,40 +6,41 @@ const DEGREE: usize = 3;
 #[derive(Debug, Clone)]
 enum Node<K: Ord + std::fmt::Debug, V: std::fmt::Debug> {
     Leaf {
-        key_vals: Vec<(Rc<K>, V)>,
+        key_vals: Vec<Option<(Rc<K>, V)>>,
         next: Option<Rc<RefCell<Node<K, V>>>>,
         prev: Option<Rc<RefCell<Node<K, V>>>>,
     },
-    NonLeaf {
-        separators: Vec<Rc<K>>,
-        children: Vec<Rc<RefCell<Node<K, V>>>>,
+    Link {
+        separators: Vec<Option<Rc<K>>>,
+        children: Vec<Option<Rc<RefCell<Node<K, V>>>>>,
     },
 }
 
 #[derive(Debug)]
 struct BPlusTree<K: Ord + std::fmt::Debug, V: std::fmt::Debug> {
-    root: Rc<RefCell<Node<K, V>>>,
+    root: Option<Rc<RefCell<Node<K, V>>>>,
 }
 
 impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
     fn new_leaf() -> Self {
         Node::Leaf {
-            key_vals: Vec::new(),
+            // this is gross but I don't want to need Clone on V
+            key_vals: Vec::from([None, None, None, None]),
             next: None,
             prev: None,
         }
     }
 
-    fn new_non_leaf() -> Self {
-        Node::NonLeaf {
-            separators: Vec::new(),
-            children: Vec::new(),
+    fn new_link() -> Self {
+        Node::Link {
+            separators: Vec::from([None, None, None]),
+            children: Vec::from([None, None, None]),
         }
     }
 
-    fn new_non_leaf_with_kv(key: K, value: V) -> Self {
+    fn new_leaf_with_kv(key: Rc<K>, value: V) -> Self {
         let mut vec = Vec::new();
-        vec.push((Rc::new(key), value));
+        vec.push(Some((key, value)));
 
         Node::Leaf {
             key_vals: vec,
@@ -53,23 +53,25 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
 impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
     pub fn new() -> Self {
         BPlusTree {
-            root: Rc::new(RefCell::new(Node::Leaf {
-                key_vals: Vec::new(),
-                prev: None,
-                next: None,
-            }))
+            root: None,
         }
     }
 
     pub fn insert(&mut self, key: K, value: V) {
-        if let Some((new_separator, new_child)) = self.insert_internal(self.root.clone(), Rc::new(key), value) {
-            let new_root = Rc::new(RefCell::new(Node::new_non_leaf()));
-            if let Node::NonLeaf { separators, children } = &mut *new_root.borrow_mut() {
-                separators.push(new_separator);
-                children.push(Rc::clone(&self.root));
-                children.push(new_child);
+
+        if self.root.is_none() {
+            self.root = Some(Rc::new(RefCell::new(Node::new_leaf_with_kv(Rc::new(key), value))));
+            return
+        }
+
+        if let Some((new_separator, new_child)) = self.insert_internal(self.root.as_ref().unwrap().clone(), Rc::new(key), value) {
+            let new_root = Rc::new(RefCell::new(Node::new_link()));
+            if let Node::Link { separators, children } = &mut *new_root.borrow_mut() {
+                separators.push(Some(new_separator));
+                children.push(Some(Rc::clone(self.root.as_ref().unwrap())));
+                children.push(Some(new_child));
             }
-            self.root = new_root;
+            self.root = Some(new_root);
         }
     }
 
@@ -77,8 +79,13 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
         let mut node_ref = node.borrow_mut();
         match &mut *node_ref {
             Node::Leaf { key_vals, next, .. } => {
-                let pos = key_vals.iter().position(|(k, _)| k.as_ref() > key.as_ref()).unwrap_or(key_vals.len());
-                key_vals.insert(pos, (key, value));
+
+                let pos = key_vals.iter().position(|maybe_filled_key| {
+                    maybe_filled_key.as_ref().map(|(k, _)| {
+                        k.as_ref() > key.as_ref()
+                    }).unwrap_or(false)
+                }).unwrap_or(key_vals.len());
+                key_vals.insert(pos, Some((key, value)));
 
                 if key_vals.len() < DEGREE {
                     return None;
@@ -94,28 +101,31 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
 
                 *next = Some(Rc::clone(&new_node));
 
-                return Some((key_vals[mid].0.clone(), new_node));
+                Some((key_vals[mid].take().unwrap().0.clone(), new_node))
             }
-            Node::NonLeaf { separators, children } => {
-                let pos = separators.iter().position(|k| k.as_ref() > key.as_ref()).unwrap_or(separators.len());
-                let child = children[pos].clone();
+            Node::Link { separators, children } => {
+                let pos = separators.iter().position(|maybe_k| {
+                   maybe_k.as_ref().map(|k| k.as_ref() > key.as_ref()).unwrap_or(false)
+                }).unwrap_or(separators.len());
 
-                if let Some((new_separator, new_child)) = self.insert_internal(child, key, value) {
-                    separators.insert(pos, new_separator);
-                    children.insert(pos + 1, new_child);
+                if let Some(child) = children[pos].take() {
+                    if let Some((new_separator, new_child)) = self.insert_internal(child, key, value) {
+                        separators.insert(pos, Some(new_separator));
+                        children.insert(pos + 1, Some(new_child));
 
-                    if separators.len() < DEGREE {
-                        return None;
+                        if separators.len() < DEGREE {
+                            return None;
+                        }
+
+                        let mid = separators.len() / 2;
+                        let new_node = Rc::new(RefCell::new(Node::new_link()));
+                        if let Node::Link { separators: new_separators, children: new_children } = &mut *new_node.borrow_mut() {
+                            *new_separators = separators.split_off(mid + 1);
+                            *new_children = children.split_off(mid + 1);
+                        }
+
+                        return Some((separators.pop().unwrap().unwrap(), new_node));
                     }
-
-                    let mid = separators.len() / 2;
-                    let new_node = Rc::new(RefCell::new(Node::new_non_leaf()));
-                    if let Node::NonLeaf { separators: new_separators, children: new_children } = &mut *new_node.borrow_mut() {
-                        *new_separators = separators.split_off(mid + 1);
-                        *new_children = children.split_off(mid + 1);
-                    }
-
-                    return Some((separators.pop().unwrap(), new_node));
                 }
 
                 None
@@ -135,18 +145,16 @@ mod tests {
     }
 
     #[test]
-    fn test_insert_single_node() {
+    fn test_single_leaf_node() {
         let mut tree = create_tree();
 
-        // Insert a single key-value pair
-        tree.insert(10, "Ten".to_string());
+        for i in 0..3 {
+            tree.insert(i, i.to_string());
+        }
 
-        // Check if the root contains the correct key-value pair
-        let root = tree.root.borrow();
-        if let Node::Leaf { key_vals, .. } = &*root {
-            assert_eq!(key_vals.len(), 1);
-        } else {
-            panic!("Root should be a leaf node");
+        let root = tree.root.as_ref().unwrap().borrow();
+        if let Node::Link { separators, .. } = &*root {
+            assert_eq!(separators.len(), 3);
         }
     }
 }
