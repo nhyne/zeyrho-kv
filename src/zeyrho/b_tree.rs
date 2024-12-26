@@ -1,12 +1,12 @@
 use std::cell::RefCell;
-use std::panic::panic_any;
+use std::fmt::Debug;
 use std::rc::Rc;
 use tonic::codegen::tokio_stream::StreamExt;
 
 const DEGREE: usize = 3;
 
 #[derive(Debug, Clone)]
-enum Node<K: Ord + std::fmt::Debug, V: std::fmt::Debug> {
+pub enum Node<K: Ord + std::fmt::Debug, V: std::fmt::Debug> {
     Leaf {
         key_vals: Vec<(Rc<K>, V)>,
         next: Option<Rc<RefCell<Node<K, V>>>>,
@@ -17,11 +17,24 @@ enum Node<K: Ord + std::fmt::Debug, V: std::fmt::Debug> {
         children: Vec<Rc<RefCell<Node<K, V>>>>,
     },
 }
+//
+// impl<K: Ord + Debug, V: Debug> Drop for Node<K, V>  {
+//     fn drop(&mut self) {
+//         todo!()
+//     }
+// }
 
 #[derive(Debug)]
-struct BPlusTree<K: Ord + std::fmt::Debug, V: std::fmt::Debug> {
-    root: Option<Rc<RefCell<Node<K, V>>>>,
+pub struct BPlusTree<K: Ord + std::fmt::Debug, V: std::fmt::Debug> {
+    pub root: Option<Rc<RefCell<Node<K, V>>>>,
 }
+
+//
+// impl<K: Ord + Debug, V: Debug> Drop for BPlusTree<K, V>  {
+//     fn drop(&mut self) {
+//         todo!()
+//     }
+// }
 
 impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
     fn new_leaf() -> Self {
@@ -106,15 +119,15 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
         let mut node_ref = node.borrow_mut();
         match &mut *node_ref {
             Node::Leaf { key_vals, next, .. } => {
-
-                // if the leaf is already full then we need to make a new one and split
                 let pos = key_vals.iter().position(|(k, _)| {
                         k.as_ref() > key.as_ref()
                 }).unwrap_or(key_vals.len());
 
+                let pk = key.clone();
                 key_vals.insert(pos, (key, value));
 
                 if key_vals.len() <= DEGREE {
+                    println!("no need to split on inset of {:?}, size is: {}, kvs are: {:?}", pk, key_vals.len(), key_vals);
                     return None;
                 }
 
@@ -129,7 +142,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
             Node::Link { separators, children } => {
                 let pos = separators.iter().position(|k| {
                    k.as_ref() > key.as_ref()
-                }).unwrap_or(separators.len());
+                }).unwrap_or(separators.len() - 1);
                 let child = children[pos].clone();
 
                 if let Some((new_separator, new_child)) = self.insert_internal(child, key, value) {

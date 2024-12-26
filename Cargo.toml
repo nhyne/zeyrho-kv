@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [[bin]]
+name = "btree"
+path = "src/main.rs"
+
+[[bin]]
 name = "queue_1"
 path = "src/queue/chapter_1/main.rs"
 
