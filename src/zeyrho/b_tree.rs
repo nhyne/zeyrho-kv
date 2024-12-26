@@ -24,8 +24,7 @@ struct BPlusTree<K: Ord + std::fmt::Debug, V: std::fmt::Debug> {
 impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
     fn new_leaf() -> Self {
         Node::Leaf {
-            // this is gross but I don't want to need Clone on V
-            key_vals: Vec::from([None, None, None, None]),
+            key_vals: Vec::new(),
             next: None,
             prev: None,
         }
@@ -33,8 +32,8 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
 
     fn new_link() -> Self {
         Node::Link {
-            separators: Vec::from([None, None, None]),
-            children: Vec::from([None, None, None]),
+            separators: Vec::new(),
+            children: Vec::new(),
         }
     }
 
@@ -80,24 +79,34 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
         match &mut *node_ref {
             Node::Leaf { key_vals, next, .. } => {
 
+                // if the leaf is already full then we need to make a new one and split
                 let pos = key_vals.iter().position(|maybe_filled_key| {
                     maybe_filled_key.as_ref().map(|(k, _)| {
                         k.as_ref() > key.as_ref()
                     }).unwrap_or(false)
                 }).unwrap_or(key_vals.len());
+
                 key_vals.insert(pos, Some((key, value)));
 
-                if key_vals.len() < DEGREE {
+                if key_vals.len() <= DEGREE {
                     return None;
                 }
 
-                let mid = key_vals.len() / 2;
+                let mid = key_vals.len() / 2; // this is ALWAYS going to be 1
+                println!("{:?}", key_vals);
                 let new_node = Rc::new(RefCell::new(Node::new_leaf()));
+
+                let mut new_keys_padded = key_vals.split_off(mid);
+                new_keys_padded.push(None);
+
                 if let Node::Leaf { key_vals: new_keys, next: new_next, prev: new_prev } = &mut *new_node.borrow_mut() {
-                    *new_keys = key_vals.split_off(mid);
+                    *new_keys = new_keys_padded;
                     *new_next = next.take();
                     *new_prev = Some(Rc::clone(&node));
                 }
+
+                // push twice b/c we
+                key_vals.push(None); key_vals.push(None);
 
                 *next = Some(Rc::clone(&new_node));
 
