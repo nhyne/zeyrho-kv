@@ -5,12 +5,21 @@ use tonic::codegen::tokio_stream::StreamExt;
 
 const DEGREE: usize = 3;
 
+/*
+TODO:
+    We have some problems with the Rc pointers to neighbors. I'm not sure if these should really be owning references, probably need to be weak ownership and during the
+    drop of a Node we update pointers. The problem with this is that it's going to get _really_ complicated. How about for now we just drop the `next` and `previous` pointers.
+
+    Let's start with a basic BST without any pointers. It'll be easier and then after we can try doing the pointers to next and previous.
+
+ */
+
 #[derive(Debug, Clone)]
 pub enum Node<K: Ord + std::fmt::Debug, V: std::fmt::Debug> {
     Leaf {
         key_vals: Vec<(Rc<K>, V)>,
-        next: Option<Rc<RefCell<Node<K, V>>>>,
-        prev: Option<Rc<RefCell<Node<K, V>>>>,
+        // next: Option<Rc<RefCell<Node<K, V>>>>,
+        // prev: Option<Rc<RefCell<Node<K, V>>>>,
     },
     Link {
         separators: Vec<Rc<K>>,
@@ -40,8 +49,8 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
     fn new_leaf() -> Self {
         Node::Leaf {
             key_vals: Vec::new(),
-            next: None,
-            prev: None,
+            // next: None,
+            // prev: None,
         }
     }
 
@@ -58,13 +67,13 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
 
         Node::Leaf {
             key_vals: vec,
-            next: None,
-            prev: None,
+            // next: None,
+            // prev: None,
         }
     }
 
     fn split_leaf_node(&mut self, link_to_self: &Rc<RefCell<Self>>) -> Self {
-        if let Node::Leaf {key_vals, next, prev} = self {
+        if let Node::Leaf {key_vals/*, next, prev*/} = self {
            let mid = key_vals.len() / 2;
             println!("{:?}", key_vals);
             let new_node = Rc::new(RefCell::new(Node::new_leaf()));
@@ -72,13 +81,13 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
             let mut new_keys_padded = key_vals.split_off(mid);
 
             let new_node_separator = new_keys_padded.last().unwrap().0.clone();
-            if let Node::Leaf { key_vals: new_keys, next: new_next, prev: new_prev } = &mut *new_node.borrow_mut() {
+            if let Node::Leaf { key_vals: new_keys, /*next: new_next, prev: new_prev*/ } = &mut *new_node.borrow_mut() {
                 *new_keys = new_keys_padded;
-                *new_next = next.take();
-                *new_prev = Some(Rc::clone(link_to_self));
+                // *new_next = next.take();
+                // *new_prev = Some(Rc::clone(link_to_self));
             }
 
-            *next = Some(Rc::clone(&new_node));
+            //*next = Some(Rc::clone(&new_node));
 
             Node::Link {
                 separators: vec![key_vals.last().unwrap().0.clone(), new_node_separator],
@@ -118,7 +127,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
     fn insert_internal(&mut self, node: Rc<RefCell<Node<K, V>>>, key: Rc<K>, value: V) -> Option<(Rc<K>, Rc<RefCell<Node<K, V>>>)> {
         let mut node_ref = node.borrow_mut();
         match &mut *node_ref {
-            Node::Leaf { key_vals, next, .. } => {
+            Node::Leaf { key_vals,/* next, */.. } => {
                 let pos = key_vals.iter().position(|(k, _)| {
                         k.as_ref() > key.as_ref()
                 }).unwrap_or(key_vals.len());
