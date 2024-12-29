@@ -5,6 +5,7 @@ service Queue {
   rpc Enqueue (EnqueueRequest) returns (EnqueueResponse);
   rpc Dequeue (DequeueRequest) returns (DequeueResponse);
   rpc Size (SizeRequest) returns (SizeResponse);
+  rpc ReplicateData (stream ReplicateDataRequest) returns (stream ReplicateDataResponse);
 }
 
 message EnqueueRequest {
@@ -28,4 +29,16 @@ message SizeRequest {}
 
 message SizeResponse {
   int32 size = 1;
+}
+
+message ReplicateDataRequest {
+  uint64 offset = 1;
+}
+
+// this is going to need to be more efficient than single messages all at once
+// should probably be able to request a dump of the current DB (or something similar) to start and then initiate the replication
+message ReplicateDataResponse {
+  string messageID = 1;
+  bytes messageData = 2;
+  uint64 nextOffset = 3;
 }

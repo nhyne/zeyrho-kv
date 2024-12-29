@@ -1,14 +1,16 @@
 use rand::prelude::*;
 use std::collections::VecDeque;
 use std::ops::Deref;
-use std::sync::Mutex;
+use std::pin::Pin;
+use tokio::sync::mpsc;
+use std::sync::{Mutex};
 use std::time;
-use tonic::{async_trait, transport::Server, Request, Response, Status};
+use tonic::{async_trait, transport::Server, Request, Response, Status, Streaming};
+use tonic::codegen::tokio_stream::Stream;
+use tonic::codegen::tokio_stream::wrappers::ReceiverStream;
 use tonic_reflection;
 use zeyrho::zeyrho::queue::queue_server::{Queue, QueueServer};
-use zeyrho::zeyrho::queue::{
-    DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, SizeRequest, SizeResponse,
-};
+use zeyrho::zeyrho::queue::{DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, ReplicateDataRequest, ReplicateDataResponse, SizeRequest, SizeResponse};
 
 mod proto {
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
@@ -88,4 +90,30 @@ impl Queue for SimpleQueue {
 
         Ok(Response::new(SizeResponse { size: { s } }))
     }
+
+    type ReplicateDataStream = Pin<Box<dyn Stream<Item=Result<ReplicateDataResponse, Status>> + Send>>;
+
+    async fn replicate_data(&self, request: Request<Streaming<ReplicateDataRequest>>) -> Result<Response<Self::ReplicateDataStream>, Status> {
+        let (tx, rx) = mpsc::channel(10);
+
+        let _ = tokio::spawn(async move {
+            for i in 1..10 {
+                let message = ReplicateDataResponse {
+                    message_id: "cool".to_string(),
+                    message_data: vec![],
+                    next_offset: i,
+                };
+
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+
+                if tx.send(Ok(message)).await.is_err() {
+                    println!("Client disconnected");
+                    break;
+                }
+            }
+        });
+
+    let outbound = ReceiverStream::new(rx);
+    Ok(Response::new(Box::pin(outbound) as Self::ReplicateDataStream))
+}
 }
