@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter, Pointer};
 use std::rc::Rc;
 use tonic::codegen::tokio_stream::StreamExt;
 
@@ -24,10 +24,38 @@ pub enum Node<K: Ord + std::fmt::Debug, V: std::fmt::Debug> {
         // prev: Option<Rc<RefCell<Node<K, V>>>>,
     },
     Link {
+        // TODO: Should these be Vec<Option<>>? It makes it a lot easier to know if we need to insert something new.
         separators: Vec<Rc<K>>, // a link has DEGREE - 1 separators
         children: Vec<Rc<RefCell<Node<K, V>>>>, // and DEGREE children
     },
 }
+
+impl<K: Debug + Ord, V: Debug> Node<K, V> {
+    fn fmt_depth(&self, f: &mut Formatter<'_>, depth: usize) -> std::fmt::Result {
+        match self {
+            Node::Leaf { key_vals, .. } => {
+                f.write_str(&" ".repeat(depth))?;
+                f.write_str(&format!("key vals: {:?}\n", key_vals))
+            }
+            Node::Link { separators, children, .. } => {
+                f.write_str(&" ".repeat(depth))?;
+                f.write_str(&format!("separators: {:?}\n", separators))?;
+                let _ = children.iter().for_each(|child| {
+                    let _ = f.write_str(&" ".repeat(depth));
+                    let _ = (*child).borrow().fmt_depth(f, depth + 1);
+                });
+                Ok(())
+            }
+        }
+    }
+}
+
+impl<K: Debug + Ord, V: Debug> Display for Node<K, V> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.fmt_depth(f, 1)
+    }
+}
+
 //
 // impl<K: Ord + Debug, V: Debug> Drop for Node<K, V>  {
 //     fn drop(&mut self) {
@@ -38,6 +66,39 @@ pub enum Node<K: Ord + std::fmt::Debug, V: std::fmt::Debug> {
 #[derive(Debug)]
 pub struct BPlusTree<K: Ord + std::fmt::Debug, V: std::fmt::Debug> {
     pub root: Option<Rc<RefCell<Node<K, V>>>>,
+}
+
+impl<K: Debug + Ord, V: Debug> Display for BPlusTree<K, V> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let depth = 0;
+        f.write_str(&" ".repeat(depth))?;
+
+        match &self.root {
+            None => {
+                f.write_str("None")
+            }
+            Some(node) => {
+                f.write_str(&format!("{}\n", *node.borrow()))
+            }
+        }
+
+    }
+
+    // fn depth_fmt(&self, node: Rc<RefCell<Node<K, V>>>, f: &mut Formatter<'_>, depth: i32) -> std::fmt::Result {
+    //     match &*node.borrow() {
+    //         Node::Leaf { key_vals, .. } => {
+    //             f.write_str(&format!("key vals: {:?}", key_vals))?
+    //         }
+    //         Node::Link { separators, children, .. } => {
+    //             f.write_str(&format!("separators: {:?}", separators))?;
+    //             children.iter().for_each(|child| {
+    //
+    //             })
+    //
+    //         }
+    //     }
+    //     todo!()
+    // }
 }
 
 //
@@ -163,7 +224,6 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                    k.as_ref() > inserted_key.as_ref()
                 });//.unwrap_or(children.len() - 1);
 
-
                 // if we're inserting the biggest and the child location is empty then create new leaf and return current link
                 if let None = child_to_update {
                     if separators.len() == SEPARATORS_MAX_SIZE {
@@ -179,6 +239,10 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                     child_to_update = Some(CHILDREN_MAX_SIZE - 1);
                 }
 
+                if children.len() < CHILDREN_MAX_SIZE {
+                    children.insert(child_to_update?, Rc::new(RefCell::new(Node::new_leaf_with_kv(inserted_key, inserted_value))));
+                    return None
+                }
 
                 let child = children[child_to_update.unwrap()].clone();
 
@@ -237,7 +301,7 @@ mod tests {
                i += 1;
             })
         } else {
-            assert_eq!(true, false);
+            panic!("root is link node when it should be leaf node");
         }
     }
 
@@ -249,7 +313,7 @@ mod tests {
         }
         let root = tree.root.as_ref().unwrap().borrow();
         if let Node::Link { separators, children } = &*root {
-            assert_eq!(separators.len(), 2);
+            assert_eq!(separators.len(), DEGREE - 1);
             assert_eq!(separators.first().is_some(), true);
             assert_eq!(separators.first().unwrap().as_ref(), &1);
             assert_eq!(separators.get(1).unwrap().as_ref(), &(DEGREE as i32));
@@ -264,11 +328,38 @@ mod tests {
                 }
                 separator_index += 1;
             })
-
-
         } else {
-            assert_eq!(true, false);
+            panic!("root is leaf node when it should be link node");
+        }
+    }
+
+    #[test]
+    fn test_full_root_link_node() {
+
+        let mut tree = create_tree();
+        for i in 0..(DEGREE * 3) {
+            println!("inserting: {:?}", i);
+            tree.insert(i as i32, i.to_string());
+            println!("------------------------\n");
         }
 
+        let root = tree.root.as_ref().unwrap().borrow();
+        println!("final tree: {}", tree);
+        if let Node::Link { separators, children } = &*root {
+            assert_eq!(separators.len(), DEGREE - 1);
+
+            let mut separator_index = 0;
+            children.iter().for_each(|child| {
+                if let Node::Leaf {key_vals, ..} = &*child.borrow() {
+                    key_vals.iter().for_each(|(key, value): &(Rc<i32>, String)| {
+                        assert!(separators[separator_index].as_ref() >= key.as_ref());
+                        assert_eq!(&key.as_ref().to_string(), value);
+                    })
+                }
+                separator_index += 1;
+            });
+        } else {
+            panic!("root is leaf node when it should be link node");
+        }
     }
 }
