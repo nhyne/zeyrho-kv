@@ -244,15 +244,28 @@ mod tests {
     #[test]
     fn test_root_link_node() {
         let mut tree = create_tree();
-
         for i in 0..DEGREE+1 {
             tree.insert(i as i32, i.to_string());
         }
-
         let root = tree.root.as_ref().unwrap().borrow();
-        println!("{:?}", root);
-        if let Node::Link { separators, .. } = &*root {
-            println!("{:?}", separators);
+        if let Node::Link { separators, children } = &*root {
+            assert_eq!(separators.len(), 2);
+            assert_eq!(separators.first().is_some(), true);
+            assert_eq!(separators.first().unwrap().as_ref(), &1);
+            assert_eq!(separators.get(1).unwrap().as_ref(), &(DEGREE as i32));
+
+            let mut separator_index = 0;
+            children.iter().for_each(|child| {
+                if let Node::Leaf {key_vals, ..} = &*child.borrow() {
+                    key_vals.iter().for_each(|(key, value): &(Rc<i32>, String)| {
+                        assert!(separators[separator_index].as_ref() >= key.as_ref());
+                        assert_eq!(&key.as_ref().to_string(), value);
+                    })
+                }
+                separator_index += 1;
+            })
+
+
         } else {
             assert_eq!(true, false);
         }
