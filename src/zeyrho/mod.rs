@@ -5,7 +5,7 @@ use crate::zeyrho::TreeNode::{LeafNode, NonLeafNode};
 #[rustfmt::skip]
 pub mod kv_store;
 pub mod queue;
-pub mod b_tree;
+pub mod btree;
 
 
 trait BTree<K: Ord, V> {
