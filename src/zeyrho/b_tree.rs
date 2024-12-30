@@ -70,8 +70,7 @@ pub struct BPlusTree<K: Ord + std::fmt::Debug, V: std::fmt::Debug> {
 
 impl<K: Debug + Ord, V: Debug> Display for BPlusTree<K, V> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let depth = 0;
-        f.write_str(&" ".repeat(depth))?;
+        f.write_str(&"root\n")?;
 
         match &self.root {
             None => {
@@ -190,7 +189,11 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
         if let Some((_new_separator, new_child)) = self.insert_internal(self.root.as_ref().unwrap().clone(), Rc::new(key), value) {
             self.root = Some(new_child);
         }
+
+        println!("tree after insert: \n {}", self)
     }
+
+    // TODO: The bubbling up is not correct right now. Inserting 0-6 is fine, but on insert of 7 we end up with a root Link node of just [7], with 3 children, which makes no sense.
 
     fn insert_internal(&mut self, node: Rc<RefCell<Node<K, V>>>, inserted_key: Rc<K>, inserted_value: V) -> Option<(Rc<K>, Rc<RefCell<Node<K, V>>>)> {
         let mut node_ref = node.borrow_mut();
@@ -209,10 +212,13 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                 }
                 println!("need to split on insert of {:?}", pk);
 
+                // the problem with inserting 7 comes after this line
+                // the link node generation is working properly
                 let new_link_node = node_ref.split_leaf_node(&node);
 
                 if let Node::Link {separators, .. } = &new_link_node {
                     println!("we've built a new link node: {:?}", new_link_node);
+                    // this selection of the last separator is the problem
                     return Some((Rc::clone(separators.last().unwrap()), Rc::new(RefCell::new(new_link_node))));
                 };
 
@@ -344,7 +350,7 @@ mod tests {
         }
 
         let root = tree.root.as_ref().unwrap().borrow();
-        println!("final tree: {}", tree);
+        println!("{}", tree);
         if let Node::Link { separators, children } = &*root {
             assert_eq!(separators.len(), DEGREE - 1);
 
