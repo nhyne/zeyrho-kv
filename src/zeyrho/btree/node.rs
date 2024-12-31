@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
 use std::rc::Rc;
+use crate::zeyrho::btree::{CHILDREN_MAX_SIZE, SEPARATORS_MAX_SIZE};
 
 #[derive(Debug, Clone)]
 pub enum Node<K: Ord + std::fmt::Debug, V: std::fmt::Debug> {
@@ -73,17 +74,31 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
     pub(super) fn split_link_node(self_rc: Rc<RefCell<Self>>) -> (Rc<RefCell<Self>>, Rc<RefCell<Self>> , Rc<RefCell<Self>>) {
         if let Node::Link { separators, children, ..} = &mut *self_rc.borrow_mut() {
             let mid = separators.len() / 2;
-            let parent_link_node = Rc::new(RefCell::new(Node::<K, V>::new_link()));
-            let new_right_link = Rc::new(RefCell::new(Node::<K, V>::new_link()));
-            if let Node::Link { separators: right_separators, children: right_children} = &mut *new_right_link.borrow_mut() {
+            println!("separators are: {:?}, mid is: {}", separators, mid);
 
+            let parent_link_node = Rc::new(RefCell::new(Node::<K, V>::new_link()));
+            let new_left_link = Rc::new(RefCell::new(Node::<K, V>::new_link()));
+            let new_left_children = children.split_off(mid);
+
+            let new_self_separators = separators.split_off(mid + 1);
+            let parent_separators = separators.split_off(mid);
+
+            if SEPARATORS_MAX_SIZE != 2 {
+                panic!("only configured for separators max of 2")
+            }
+
+            if let Node::Link { separators: left_separators, children: left_children} = &mut *new_left_link.borrow_mut() {
+                *left_separators = separators.clone();
+                *left_children = new_left_children;
             };
             if let Node::Link { separators: new_separators, children: new_children } = &mut *parent_link_node.borrow_mut() {
-                *new_separators = vec![separators[mid].clone()];
-                *new_children = children.split_off(mid + 1);
+                *new_separators = parent_separators;
+                *new_children = vec![new_left_link.clone(), self_rc.clone()];
             };
 
-            (self_rc.clone(), parent_link_node, new_right_link)
+            *separators = new_self_separators;
+
+            (new_left_link, parent_link_node, self_rc.clone())
         } else {
             panic!("trying to split link node on child node")
         }
@@ -94,29 +109,15 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
         println!("borrowing original node as mut");
         if let Node::Leaf {key_vals/*, next, prev*/} = &mut *link_to_self.borrow_mut() {
             let mid = key_vals.len() / 2;
-            println!("splitting leaf node: {:?}", key_vals);
 
             let split_point = key_vals[mid].0.clone();
             let new_keys_padded = key_vals.split_off(mid);
 
-            println!("borrowing new node as mut");
-
-            let new_node = Rc::new(RefCell::new(Node::Leaf {
+            let new_left_node = Rc::new(RefCell::new(Node::Leaf {
                 key_vals: new_keys_padded
             }));
 
-            //*next = Some(Rc::clone(&new_node));
-
-            println!("new node after split: {:?}", new_node);
-            println!("self after split: {:?}", key_vals);
-            let new_link = Node::Link {
-                separators: vec![split_point.clone()],
-                children: vec![Rc::clone(link_to_self), new_node.clone()],
-            };
-
-
-            println!("new link: {:?}", new_link);
-            (link_to_self.clone(), split_point, new_node)
+            (new_left_node, split_point, link_to_self.clone())
         } else {
             panic!("trying to split leaf node on link node");
         }
@@ -162,13 +163,31 @@ mod tests {
 
     #[test]
     fn test_split_link() {
-        let left_node = create_leaf_with_kvs(vec!(1, 2));
-        let mid_node = create_leaf_with_kvs(vec!(3, 4));
-        let right_node = create_leaf_with_kvs(vec!(5, 6));
+        let first = create_leaf_with_kvs(vec!(1));
+        let second = create_leaf_with_kvs(vec!(2));
+        let third = create_leaf_with_kvs(vec!(3));
+        let fourth = create_leaf_with_kvs(vec!(4, 5));
 
         let link_node = Node::Link {
-            separators: vec!(Rc::new(2), Rc::new(4)),
-            children: vec!(left_node, mid_node, right_node)
+            separators: vec!(Rc::new(2), Rc::new(3), Rc::new(4)),
+            children: vec!(first, second, third, fourth)
         };
+
+        let (left, parent, right) = Node::split_link_node(Rc::new(RefCell::new(link_node)));
+
+        if let Node::Link {separators, ..} = parent.borrow().deref() {
+            let collected_seps : Vec<&i32> = separators.iter().map(|k: &Rc<i32>| k.as_ref()).collect();
+            assert_eq!(vec![&3], collected_seps);
+        };
+
+        if let Node::Link {separators, ..} = left.borrow().deref() {
+            let collected_seps : Vec<&i32> = separators.iter().map(|k: &Rc<i32>| k.as_ref()).collect();
+            assert_eq!(vec![&2], collected_seps);
+        };
+        if let Node::Link {separators, ..} = right.borrow().deref() {
+            let collected_seps : Vec<&i32> = separators.iter().map(|k: &Rc<i32>| k.as_ref()).collect();
+            assert_eq!(vec![&4], collected_seps);
+        };
+
     }
 }
