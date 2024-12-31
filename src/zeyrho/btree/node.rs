@@ -91,35 +91,18 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
         if let Node::Link { separators, children, ..} = self {
             let mid = separators.len() / 2;
 
-            println!("SPLITTING: mid-pos: {}, value: {:?}", mid, separators[mid]);
-            // let parent_link_node = Rc::new(RefCell::new(Node::<K, V>::new_link()));
             let new_right_link = Rc::new(RefCell::new(Node::<K, V>::new_link()));
             let new_right_children = children.split_off(mid + 1);
-            println!("SPLITTING: new right children: {:?}", new_right_children);
 
             let new_right_separators = separators.split_off(mid + 1);
-            println!("SPLITTING: new right seps: {:?}", new_right_separators);
             let parent_separators = separators.split_off(mid);
-            println!("SPLITTING: new parent seps: {:?}", parent_separators);
-
-            println!("SPLITTING: self seps: {:?}", separators);
 
             let bubbling_separator = parent_separators.first().unwrap().clone();
-
-            // if SEPARATORS_MAX_SIZE != 2 {
-            //     panic!("only configured for separators max of 2")
-            // }
 
             if let Node::Link { separators: right_separators, children: right_children} = &mut *new_right_link.borrow_mut() {
                 *right_separators = new_right_separators;
                 *right_children = new_right_children;
             };
-            // if let Node::Link { separators: new_separators, children: new_children } = &mut *parent_link_node.borrow_mut() {
-            //     *new_separators = parent_separators;
-            //     *new_children = vec![link_to_self.clone(), new_right_link.clone()];
-            // };
-            //
-            // println!("SPLITTING: new parent link node: {:?}", parent_link_node);
 
             (bubbling_separator, new_right_link)
         } else {

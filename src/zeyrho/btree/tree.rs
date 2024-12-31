@@ -75,7 +75,6 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
 
         match self.insert_internal(&self.root.as_ref().unwrap().clone(), Rc::new(key), value) {
             (Some(new_separator), Some(new_node)) => {
-                println!("need to generate new link node at the top");
                 let new_root = Rc::new(RefCell::new(Node::Link {
                     separators: vec![new_separator],
                     children: vec![self.root.take().unwrap(), new_node],
@@ -89,7 +88,6 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
             (_, _) => {}
         }
 
-        println!("tree after insert: \n {}", self)
     }
 
     // TODO: The bubbling up is not correct right now. Inserting 0-6 is fine, but on insert of 7 we end up with a root Link node of just [7], with 3 children, which makes no sense.
@@ -107,30 +105,24 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                 key_vals.insert(pos, (inserted_key, inserted_value));
 
                 if key_vals.len() <= CHILDREN_MAX_SIZE {
-                    println!("no need to split on insert of {:?}, size is: {}, kvs are: {:?}", pk, key_vals.len(), key_vals);
                     return (None, None) ;
                 }
-                println!("need to split on insert of {:?}, kvs are: {:?}", pk, key_vals);
 
                 // the problem with inserting 7 comes after this line
                 // the link node generation is working properly
                 let ( split, new_right )= (&mut *node_ref).split_borrowed_leaf_node();
-                println!("new split: {:?}, new right: {:?}", split, new_right);
 
                 (Some(split), Some(new_right))
             }
             Node::Link { separators, children } => {
 
-                println!("inserting {:?} into link", inserted_key);
                 let mut child_to_update = separators.iter().position(|k| {
                    k.as_ref() > inserted_key.as_ref()
                 });
 
-                println!("child to update: {:?}", child_to_update);
                 // if we're inserting the biggest and the child location is empty then create new leaf and return current link
                 if let None = child_to_update {
                     if separators.len() == SEPARATORS_MAX_SIZE {
-                        println!("inserting at right most child");
                         // here we must insert into the right most subtree
                         if let None = children.get(DEGREE - 1) {
                             // no child is here, we need to make a new one
@@ -143,40 +135,19 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                     }
                     child_to_update = Some(children.len() - 1);
                 }
-                println!("child to update: {:?}", child_to_update);
 
                 let child = children[child_to_update.unwrap()].clone();
 
-                println!("inserting into child node: {:?}, at child_to_update: {:?}", inserted_key, child_to_update);
                 // Here somewhere we have a problem bubbling up the 7
                 match self.insert_internal(&child, inserted_key, inserted_value) {
                     (Some(new_separator), Some(new_node)) => {
-                        // TODO: Shouldn't this just be a full swap? And not just an insertion?
-                        println!("============");
-                        println!("Not sure if we need to swap the separator when it bubbles up to us.");
-                        println!("new separator: {:?}, new node: {:?}, current node seps: {:?}", new_separator, new_node, separators);
-                        println!("child we're updating: {:?}", child);
-
-                        // we need to adjust where the insertion of the new node goes
-                        // shouldn't a new node always get put to the right? -- no: I need to do a position search for placement of the separator
-                        // and then put the child +1 from there
-                        println!("after internal insert");
-                        println!("seps: {:?}, children: {:?}, new_sep: {:?}, new_node: {:?}", separators, children, new_separator, new_node);
-                        // new node must be inserted into the children
                         Node::insert_separator_and_child_into_link(separators, children, new_separator, new_node);
-                        println!("\nafter insertion into seps and children");
-                        println!("separators after insert: {:?}, children after insert: {:?}", separators, children);
-
                         if separators.len() <= SEPARATORS_MAX_SIZE {
                             return (None, None);
                         }
 
-                        // this splitting logic should be somewhere else
-                        // this link splitting logic is broken
                         let (new_sep, new_right) = (&mut *node_ref).split_borrowed_link_node(node);
-                        println!("\n new sep: {:?}, new_right: {:?}", new_sep, new_right);
 
-                        println!("returning just new node");
                         return (Some(new_sep), Some(new_right));
 
                     }
@@ -263,13 +234,10 @@ mod tests {
     fn test_full_root_link_node() {
         let mut tree = create_tree();
         for i in 0..(5) {
-            println!("inserting {}", i);
             tree.insert(i as i32, i.to_string());
-            println!("-----------------------\n")
         }
 
         let root = tree.root.as_ref().unwrap().borrow();
-        println!("{}", tree);
         if let Node::Link { separators, children } = &*root {
             assert_eq!(separators.len(), 1);
 
@@ -292,9 +260,7 @@ mod tests {
     fn test_insert_smaller_keys() {
         let mut tree = create_tree();
         for i in (0..DEGREE * DEGREE).rev() {
-            println!("inserting {}", i);
             tree.insert(i as i32, i.to_string());
-            println!("-----------------------\n")
         }
 
         // with DEGREE = 3 tree should look like:
@@ -309,7 +275,6 @@ mod tests {
                 right leaf: 8
          */
 
-        println!("tree: {}", tree);
         let mut separator_index = 0;
         let expected_separators = vec![vec![&1, &3], vec![&7]];
 
