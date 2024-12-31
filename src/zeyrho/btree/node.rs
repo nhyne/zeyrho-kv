@@ -122,36 +122,12 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
 
     // splitting a link node with separators 1, 2, 3, should result in a new link node with a single separator of 2 and child link nodes of 1, 3
     pub(super) fn split_link_node(self_rc: &Rc<RefCell<Self>>) -> (Rc<RefCell<Self>>, Rc<RefCell<Self>> , Rc<RefCell<Self>>) {
-        if let Node::Link { separators, children, ..} = &mut *self_rc.borrow_mut() {
-            let mid = separators.len() / 2;
+        let new_parent = (*self_rc.borrow_mut()).split_borrowed_link_node(self_rc);
 
-            let parent_link_node = Rc::new(RefCell::new(Node::<K, V>::new_link()));
-            let new_right_link = Rc::new(RefCell::new(Node::<K, V>::new_link()));
-            let new_right_children = children.split_off(mid + 1);
-
-            let new_right_separators = separators.split_off(mid + 1);
-            let parent_separators = separators.split_off(mid);
-
-            if SEPARATORS_MAX_SIZE != 2 {
-                panic!("only configured for separators max of 2")
-            }
-
-            if let Node::Link { separators: right_separators, children: right_children} = &mut *new_right_link.borrow_mut() {
-                *right_separators = new_right_separators;
-                *right_children = new_right_children;
-            };
-
-            if let Node::Link { separators: new_separators, children: new_children } = &mut *parent_link_node.borrow_mut() {
-                *new_separators = parent_separators;
-                *new_children = vec![self_rc.clone(), new_right_link.clone()];
-            };
-
-
-            (self_rc.clone(), parent_link_node, new_right_link)
-        } else {
-            panic!("trying to split link node on child node")
+        if let Node::Link {children, ..} = new_parent.borrow().deref() {
+            return (children[0].clone(), new_parent.clone(), children[1].clone())
         }
-
+        panic!("should not fail")
     }
 
     // returns the new separator and the new right node. Self will become the left node
