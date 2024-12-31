@@ -4,7 +4,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 use tonic::codegen::tokio_stream::StreamExt;
 use crate::zeyrho::btree::node::Node;
-use crate::zeyrho::btree::{CHILDREN_MAX_SIZE, SEPARATORS_MAX_SIZE};
+use crate::zeyrho::btree::{CHILDREN_MAX_SIZE, DEGREE, SEPARATORS_MAX_SIZE};
 /*
 TODO:
     We have some problems with the Rc pointers to neighbors. I'm not sure if these should really be owning references, probably need to be weak ownership and during the
@@ -132,14 +132,16 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                     if separators.len() == SEPARATORS_MAX_SIZE {
                         println!("inserting at right most child");
                         // here we must insert into the right most subtree
-                        if let None = children.get(CHILDREN_MAX_SIZE - 1) {
+                        if let None = children.get(DEGREE - 1) {
                             // no child is here, we need to make a new one
                             let new_leaf = Node::new_leaf_with_kv(inserted_key, inserted_value);
                             children.push(Rc::new(RefCell::new(new_leaf)));
                             return (None, None);
+                        } else {
+
                         }
                     }
-                    child_to_update = Some(CHILDREN_MAX_SIZE - 1);
+                    child_to_update = Some(children.len() - 1);
                 }
                 println!("child to update: {:?}", child_to_update);
 
@@ -150,14 +152,19 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                 match self.insert_internal(&child, inserted_key, inserted_value) {
                     (Some(new_separator), Some(new_node)) => {
                         // TODO: Shouldn't this just be a full swap? And not just an insertion?
+                        println!("============");
                         println!("Not sure if we need to swap the separator when it bubbles up to us.");
-                        println!("new separator: {:?}, new node: {:?}, current node: {:?}", new_separator, new_node, child);
+                        println!("new separator: {:?}, new node: {:?}, current node seps: {:?}", new_separator, new_node, separators);
+                        println!("child we're updating: {:?}", child);
 
                         // we need to adjust where the insertion of the new node goes
                         // shouldn't a new node always get put to the right? -- no: I need to do a position search for placement of the separator
                         // and then put the child +1 from there
+                        println!("after internal insert");
+                        println!("seps: {:?}, children: {:?}, new_sep: {:?}, new_node: {:?}", separators, children, new_separator, new_node);
+                        // new node must be inserted into the children
                         Node::insert_separator_and_child_into_link(separators, children, new_separator, new_node);
-
+                        println!("\nafter insertion into seps and children");
                         println!("separators after insert: {:?}, children after insert: {:?}", separators, children);
 
                         if separators.len() <= SEPARATORS_MAX_SIZE {
@@ -166,15 +173,15 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
 
                         // this splitting logic should be somewhere else
                         // this link splitting logic is broken
-                        let new_parent = (&mut *node_ref).split_borrowed_link_node(node);
+                        let (new_sep, new_right) = (&mut *node_ref).split_borrowed_link_node(node);
+                        println!("\n new sep: {:?}, new_right: {:?}", new_sep, new_right);
 
                         println!("returning just new node");
-                        return (None, Some(new_parent));
+                        return (Some(new_sep), Some(new_right));
 
                     }
                     (None, Some(new_node)) => {
-                        println!("no new separator, just new child: {:?}", new_node);
-
+                        panic!("no sep bubble, just new node")
                     }
                     (_, _) => {}
                 }
@@ -255,8 +262,10 @@ mod tests {
     #[test]
     fn test_full_root_link_node() {
         let mut tree = create_tree();
-        for i in 0..(DEGREE * 3) {
+        for i in 0..(5) {
+            println!("inserting {}", i);
             tree.insert(i as i32, i.to_string());
+            println!("-----------------------\n")
         }
 
         let root = tree.root.as_ref().unwrap().borrow();
@@ -282,7 +291,7 @@ mod tests {
     #[test]
     fn test_insert_smaller_keys() {
         let mut tree = create_tree();
-        for i in (0..DEGREE * 3).rev() {
+        for i in (0..DEGREE * DEGREE).rev() {
             println!("inserting {}", i);
             tree.insert(i as i32, i.to_string());
             println!("-----------------------\n")

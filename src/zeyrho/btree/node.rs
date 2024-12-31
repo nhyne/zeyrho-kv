@@ -87,32 +87,41 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
         }
     }
 
-    pub(super) fn split_borrowed_link_node(&mut self, link_to_self: &Rc<RefCell<Node<K, V>>>) -> Rc<RefCell<Self>> {
+    pub(super) fn split_borrowed_link_node(&mut self, link_to_self: &Rc<RefCell<Node<K, V>>>) -> (Rc<K>, Rc<RefCell<Self>>) {
         if let Node::Link { separators, children, ..} = self {
             let mid = separators.len() / 2;
 
-            let parent_link_node = Rc::new(RefCell::new(Node::<K, V>::new_link()));
+            println!("SPLITTING: mid-pos: {}, value: {:?}", mid, separators[mid]);
+            // let parent_link_node = Rc::new(RefCell::new(Node::<K, V>::new_link()));
             let new_right_link = Rc::new(RefCell::new(Node::<K, V>::new_link()));
             let new_right_children = children.split_off(mid + 1);
+            println!("SPLITTING: new right children: {:?}", new_right_children);
 
             let new_right_separators = separators.split_off(mid + 1);
+            println!("SPLITTING: new right seps: {:?}", new_right_separators);
             let parent_separators = separators.split_off(mid);
+            println!("SPLITTING: new parent seps: {:?}", parent_separators);
 
-            if SEPARATORS_MAX_SIZE != 2 {
-                panic!("only configured for separators max of 2")
-            }
+            println!("SPLITTING: self seps: {:?}", separators);
+
+            let bubbling_separator = parent_separators.first().unwrap().clone();
+
+            // if SEPARATORS_MAX_SIZE != 2 {
+            //     panic!("only configured for separators max of 2")
+            // }
 
             if let Node::Link { separators: right_separators, children: right_children} = &mut *new_right_link.borrow_mut() {
                 *right_separators = new_right_separators;
                 *right_children = new_right_children;
             };
-            if let Node::Link { separators: new_separators, children: new_children } = &mut *parent_link_node.borrow_mut() {
-                *new_separators = parent_separators;
-                *new_children = vec![link_to_self.clone(), new_right_link.clone()];
-            };
+            // if let Node::Link { separators: new_separators, children: new_children } = &mut *parent_link_node.borrow_mut() {
+            //     *new_separators = parent_separators;
+            //     *new_children = vec![link_to_self.clone(), new_right_link.clone()];
+            // };
+            //
+            // println!("SPLITTING: new parent link node: {:?}", parent_link_node);
 
-
-            parent_link_node
+            (bubbling_separator, new_right_link)
         } else {
             panic!("trying to split link node on child node")
         }
@@ -121,11 +130,11 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
     }
 
     // splitting a link node with separators 1, 2, 3, should result in a new link node with a single separator of 2 and child link nodes of 1, 3
-    pub(super) fn split_link_node(self_rc: &Rc<RefCell<Self>>) -> (Rc<RefCell<Self>>, Rc<RefCell<Self>> , Rc<RefCell<Self>>) {
-        let new_parent = (*self_rc.borrow_mut()).split_borrowed_link_node(self_rc);
+    pub(super) fn split_link_node(self_rc: &Rc<RefCell<Self>>) -> (Rc<RefCell<Self>>, Rc<K> , Rc<RefCell<Self>>) {
+        let (sep, new_right) = (*self_rc.borrow_mut()).split_borrowed_link_node(self_rc);
 
-        if let Node::Link {children, ..} = new_parent.borrow().deref() {
-            return (children[0].clone(), new_parent.clone(), children[1].clone())
+        if let Node::Link {children, ..} = new_right.borrow().deref() {
+            return (children[0].clone(), sep, new_right.clone())
         }
         panic!("should not fail")
     }
@@ -193,49 +202,42 @@ mod tests {
         let third = create_leaf_with_kvs(vec!(3));
         let fourth = create_leaf_with_kvs(vec!(4, 5));
 
-        let link_node = Node::Link {
+        let link_node = Rc::new(RefCell::new(Node::Link {
             separators: vec!(Rc::new(2), Rc::new(3), Rc::new(4)),
             children: vec!(first, second, third, fourth)
-        };
+        }));
 
-        let (left, parent, right) = Node::split_link_node(&Rc::new(RefCell::new(link_node)));
+        let mut link_ref = link_node.borrow_mut();
+        if let Node::Link { separators, children, ..} = &mut *link_ref {
 
-        if let Node::Link {separators, children, ..} = parent.borrow().deref() {
-            let collected_seps : Vec<&i32> = separators.iter().map(|k: &Rc<i32>| k.as_ref()).collect();
-            assert_eq!(vec![&3], collected_seps);
+            let (new_sep, new_right) = (&mut *link_ref).split_borrowed_link_node(&link_node);
 
-            let expected_children_separators = vec!(&2, &4);
-            for i in 0..children.len() {
-                if let Node::Link {separators, ..} = children[i].borrow().deref() {
-                    let collected_seps : Vec<&i32> = separators.iter().map(|k: &Rc<i32>| k.as_ref()).collect();
-                    assert_eq!(vec![expected_children_separators[i]], collected_seps);
+            if let Node::Link {separators, children, ..} = link_ref.deref() {
+                let collected_seps : Vec<&i32> = separators.iter().map(|k: &Rc<i32>| k.as_ref()).collect();
+                assert_eq!(vec![&2], collected_seps);
+
+                let expected_children_keys = vec!(vec![&1], vec![&2]);
+                for i in 0..children.len() {
+                    if let Node::Leaf {key_vals, ..} = children[i].borrow().deref() {
+                        let collected_keys: Vec<&i32> = key_vals.iter().map(|(k, v): &(Rc<i32>, String)| k.as_ref()).collect();
+                        assert_eq!(expected_children_keys[i], collected_keys);
+                    }
                 }
-            }
-        };
-
-        if let Node::Link {separators, children, ..} = left.borrow().deref() {
-            let collected_seps : Vec<&i32> = separators.iter().map(|k: &Rc<i32>| k.as_ref()).collect();
-            assert_eq!(vec![&2], collected_seps);
-
-            let expected_children_keys = vec!(vec![&1], vec![&2]);
-            for i in 0..children.len() {
-                if let Node::Leaf {key_vals, ..} = children[i].borrow().deref() {
-                    let collected_keys: Vec<&i32> = key_vals.iter().map(|(k, v): &(Rc<i32>, String)| k.as_ref()).collect();
-                    assert_eq!(expected_children_keys[i], collected_keys);
+            };
+            if let Node::Link {separators, children, ..} = new_right.borrow().deref() {
+                let collected_seps : Vec<&i32> = separators.iter().map(|k: &Rc<i32>| k.as_ref()).collect();
+                assert_eq!(vec![&4], collected_seps);
+                let expected_children_keys = vec!(vec![&3], vec![&4, &5]);
+                for i in 0..children.len() {
+                    if let Node::Leaf {key_vals, ..} = children[i].borrow().deref() {
+                        let collected_keys: Vec<&i32> = key_vals.iter().map(|(k, v): &(Rc<i32>, String)| k.as_ref()).collect();
+                        assert_eq!(expected_children_keys[i], collected_keys);
+                    }
                 }
-            }
-        };
-        if let Node::Link {separators, children, ..} = right.borrow().deref() {
-            let collected_seps : Vec<&i32> = separators.iter().map(|k: &Rc<i32>| k.as_ref()).collect();
-            assert_eq!(vec![&4], collected_seps);
-            let expected_children_keys = vec!(vec![&3], vec![&4, &5]);
-            for i in 0..children.len() {
-                if let Node::Leaf {key_vals, ..} = children[i].borrow().deref() {
-                    let collected_keys: Vec<&i32> = key_vals.iter().map(|(k, v): &(Rc<i32>, String)| k.as_ref()).collect();
-                    assert_eq!(expected_children_keys[i], collected_keys);
-                }
-            }
-        };
+            };
+
+            assert_eq!(new_sep.as_ref(), &3);
+        }
 
     }
 }
