@@ -73,7 +73,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
             return
         }
 
-        match self.insert_internal(self.root.as_ref().unwrap().clone(), Rc::new(key), value) {
+        match self.insert_internal(&self.root.as_ref().unwrap().clone(), Rc::new(key), value) {
             (Some(new_separator), Some(new_node)) => {
                 println!("need to generate new link node at the top");
                 let new_root = Rc::new(RefCell::new(Node::Link {
@@ -84,7 +84,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                 self.root = Some(new_root)
             }
             (None, Some(new_node)) => {
-                println!("we just have a new node, what do we do?");
+                self.root = Some(new_node)
             }
             (_, _) => {}
         }
@@ -95,7 +95,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
     // TODO: The bubbling up is not correct right now. Inserting 0-6 is fine, but on insert of 7 we end up with a root Link node of just [7], with 3 children, which makes no sense.
 
     // the left Option is the new separator and the right is the new right node. We don't need to do anything with the left node b/c the parent is already pointing to it
-    fn insert_internal(&mut self, node: Rc<RefCell<Node<K, V>>>, inserted_key: Rc<K>, inserted_value: V) -> (Option<Rc<K>>, Option<Rc<RefCell<Node<K, V>>>>) {
+    fn insert_internal(&mut self, node: &Rc<RefCell<Node<K, V>>>, inserted_key: Rc<K>, inserted_value: V) -> (Option<Rc<K>>, Option<Rc<RefCell<Node<K, V>>>>) {
         let mut node_ref = node.borrow_mut();
         match &mut *node_ref {
             Node::Leaf { key_vals,/* next, */.. } => {
@@ -110,11 +110,12 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                     println!("no need to split on insert of {:?}, size is: {}, kvs are: {:?}", pk, key_vals.len(), key_vals);
                     return (None, None) ;
                 }
-                println!("need to split on insert of {:?}", pk);
+                println!("need to split on insert of {:?}, kvs are: {:?}", pk, key_vals);
 
                 // the problem with inserting 7 comes after this line
                 // the link node generation is working properly
                 let ( split, new_right )= (&mut *node_ref).split_borrowed_leaf_node();
+                println!("new split: {:?}, new right: {:?}", split, new_right);
 
                 (Some(split), Some(new_right))
             }
@@ -150,13 +151,17 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
 
                 println!("inserting into child node: {:?}, at child_to_update: {:?}", inserted_key, child_to_update);
                 // Here somewhere we have a problem bubbling up the 7
-                match self.insert_internal(child, inserted_key, inserted_value) {
+                match self.insert_internal(&child, inserted_key, inserted_value) {
                     (Some(new_separator), Some(new_node)) => {
                         // TODO: Shouldn't this just be a full swap? And not just an insertion?
                         println!("Not sure if we need to swap the separator when it bubbles up to us.");
-                        println!("new separator: {:?}, new node: {:?}", new_separator, new_node);
-                        separators.insert(child_to_update.unwrap(), new_separator);
-                        children.insert(child_to_update.unwrap(), new_node);
+                        println!("new separator: {:?}, new node: {:?}, current node: {:?}", new_separator, new_node, child);
+
+                        // we need to adjust where the insertion of the new node goes
+                        // shouldn't a new node always get put to the right? -- no: I need to do a position search for placement of the separator
+                        // and then put the child +1 from there
+                        Node::insert_separator_and_child_into_link(separators, children, new_separator, new_node);
+
                         println!("separators after insert: {:?}, children after insert: {:?}", separators, children);
 
                         if separators.len() <= SEPARATORS_MAX_SIZE {
@@ -165,15 +170,10 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
 
                         // this splitting logic should be somewhere else
                         // this link splitting logic is broken
-                        let mid = separators.len() / 2;
-                        let new_node = Rc::new(RefCell::new(Node::new_link()));
-                        if let Node::Link { separators: new_separators, children: new_children } = &mut *new_node.borrow_mut() {
-                            *new_separators = separators.split_off(mid + 1);
-                            *new_children = children.split_off(mid + 1);
-                        }
+                        let new_parent = (&mut *node_ref).split_borrowed_link_node(node);
 
                         println!("returning just new node");
-                        return (None, Some(new_node));
+                        return (None, Some(new_parent));
 
                     }
                     (None, Some(new_node)) => {
@@ -258,7 +258,6 @@ mod tests {
 
     #[test]
     fn test_full_root_link_node() {
-
         let mut tree = create_tree();
         for i in 0..(DEGREE * 3) {
             println!("inserting: {:?}", i);
@@ -284,5 +283,18 @@ mod tests {
         } else {
             panic!("root is leaf node when it should be link node");
         }
+    }
+
+    #[test]
+    fn test_insert_smaller_keys() {
+        let mut tree = create_tree();
+        for i in (0..DEGREE * 3).rev() {
+            println!("inserting: {:?}", i);
+            tree.insert(i as i32, i.to_string());
+            println!("------------------------\n");
+        }
+
+        println!("tree: {}", tree);
+        assert!(false);
     }
 }

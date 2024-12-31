@@ -70,8 +70,58 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
         }
     }
 
+    pub(super) fn insert_separator_and_child_into_link(separators: &mut Vec<Rc<K>>, children: &mut Vec<Rc<RefCell<Node<K, V>>>>, new_separator: Rc<K>, new_child: Rc<RefCell<Node<K, V>>>) {
+        let sep_pos = separators.iter().position(|k| {
+            k.as_ref() > new_separator.as_ref()
+        });
+
+        match sep_pos {
+            None => {
+                separators.push(new_separator);
+                children.push(new_child);
+            }
+            Some(pos) => {
+                separators.insert(pos, new_separator);
+                children.insert(pos + 1, new_child);
+            }
+        }
+    }
+
+    pub(super) fn split_borrowed_link_node(&mut self, link_to_self: &Rc<RefCell<Node<K, V>>>) -> Rc<RefCell<Self>> {
+        if let Node::Link { separators, children, ..} = self {
+            let mid = separators.len() / 2;
+
+            let parent_link_node = Rc::new(RefCell::new(Node::<K, V>::new_link()));
+            let new_right_link = Rc::new(RefCell::new(Node::<K, V>::new_link()));
+            let new_right_children = children.split_off(mid + 1);
+
+            let new_right_separators = separators.split_off(mid + 1);
+            let parent_separators = separators.split_off(mid);
+
+            if SEPARATORS_MAX_SIZE != 2 {
+                panic!("only configured for separators max of 2")
+            }
+
+            if let Node::Link { separators: right_separators, children: right_children} = &mut *new_right_link.borrow_mut() {
+                *right_separators = new_right_separators;
+                *right_children = new_right_children;
+            };
+            if let Node::Link { separators: new_separators, children: new_children } = &mut *parent_link_node.borrow_mut() {
+                *new_separators = parent_separators;
+                *new_children = vec![link_to_self.clone(), new_right_link.clone()];
+            };
+
+
+            parent_link_node
+        } else {
+            panic!("trying to split link node on child node")
+        }
+
+
+    }
+
     // splitting a link node with separators 1, 2, 3, should result in a new link node with a single separator of 2 and child link nodes of 1, 3
-    pub(super) fn split_link_node(self_rc: Rc<RefCell<Self>>) -> (Rc<RefCell<Self>>, Rc<RefCell<Self>> , Rc<RefCell<Self>>) {
+    pub(super) fn split_link_node(self_rc: &Rc<RefCell<Self>>) -> (Rc<RefCell<Self>>, Rc<RefCell<Self>> , Rc<RefCell<Self>>) {
         if let Node::Link { separators, children, ..} = &mut *self_rc.borrow_mut() {
             let mid = separators.len() / 2;
 
@@ -90,6 +140,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
                 *right_separators = new_right_separators;
                 *right_children = new_right_children;
             };
+
             if let Node::Link { separators: new_separators, children: new_children } = &mut *parent_link_node.borrow_mut() {
                 *new_separators = parent_separators;
                 *new_children = vec![self_rc.clone(), new_right_link.clone()];
@@ -171,7 +222,7 @@ mod tests {
             children: vec!(first, second, third, fourth)
         };
 
-        let (left, parent, right) = Node::split_link_node(Rc::new(RefCell::new(link_node)));
+        let (left, parent, right) = Node::split_link_node(&Rc::new(RefCell::new(link_node)));
 
         if let Node::Link {separators, children, ..} = parent.borrow().deref() {
             let collected_seps : Vec<&i32> = separators.iter().map(|k: &Rc<i32>| k.as_ref()).collect();
