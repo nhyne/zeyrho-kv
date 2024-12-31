@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::fmt::{Debug, Display, Formatter, Pointer};
+use std::ops::Deref;
 use std::rc::Rc;
 use tonic::codegen::tokio_stream::StreamExt;
 use crate::zeyrho::btree::node::Node;
@@ -73,8 +74,18 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
         }
 
         match self.insert_internal(self.root.as_ref().unwrap().clone(), Rc::new(key), value) {
-            (Some(new_separator), Some(new_node)) => {}
-            (None, Some(new_node)) => {}
+            (Some(new_separator), Some(new_node)) => {
+                println!("need to generate new link node at the top");
+                let new_root = Rc::new(RefCell::new(Node::Link {
+                    separators: vec![new_separator],
+                    children: vec![self.root.take().unwrap(), new_node],
+                }));
+
+                self.root = Some(new_root)
+            }
+            (None, Some(new_node)) => {
+                println!("we just have a new node, what do we do?");
+            }
             (_, _) => {}
         }
 
@@ -83,6 +94,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
 
     // TODO: The bubbling up is not correct right now. Inserting 0-6 is fine, but on insert of 7 we end up with a root Link node of just [7], with 3 children, which makes no sense.
 
+    // the left Option is the new separator and the right is the new right node. We don't need to do anything with the left node b/c the parent is already pointing to it
     fn insert_internal(&mut self, node: Rc<RefCell<Node<K, V>>>, inserted_key: Rc<K>, inserted_value: V) -> (Option<Rc<K>>, Option<Rc<RefCell<Node<K, V>>>>) {
         let mut node_ref = node.borrow_mut();
         match &mut *node_ref {
@@ -102,15 +114,9 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
 
                 // the problem with inserting 7 comes after this line
                 // the link node generation is working properly
-                let new_link_node = node_ref.split_leaf_node(&node);
+                let ( split, new_right )= (&mut *node_ref).split_borrowed_leaf_node();
 
-                if let Node::Link {separators, .. } = &new_link_node {
-                    println!("we've built a new link node: {:?}", new_link_node);
-                    // this selection of the last separator is the problem
-                    return (Some(Rc::clone(separators.last().unwrap())), Some(Rc::new(RefCell::new(new_link_node))));
-                };
-
-                return (None, None);
+                (Some(split), Some(new_right))
             }
             Node::Link { separators, children } => {
 
@@ -198,16 +204,13 @@ mod tests {
     fn test_single_leaf_node() {
         let mut tree = create_tree();
 
-        for i in 0..DEGREE {
+        for i in 0..CHILDREN_MAX_SIZE {
             tree.insert(i as i32, i.to_string());
         }
-
         let root = tree.root.as_ref().unwrap().borrow();
-        println!("{:?}", root);
 
         if let Node::Leaf { key_vals, .. } = &*root {
-            println!("{:?}", key_vals);
-            assert_eq!(key_vals.len(), DEGREE);
+            assert_eq!(key_vals.len(), CHILDREN_MAX_SIZE);
             let mut i = 0;
             key_vals.iter().for_each(|(x, _)| {
                assert_eq!(x.as_ref(), &i);
@@ -221,21 +224,28 @@ mod tests {
     #[test]
     fn test_root_link_node() {
         let mut tree = create_tree();
-        for i in 0..DEGREE+1 {
+        for i in 0..DEGREE {
             tree.insert(i as i32, i.to_string());
         }
         let root = tree.root.as_ref().unwrap().borrow();
         if let Node::Link { separators, children } = &*root {
-            assert_eq!(separators.len(), DEGREE - 1);
+            assert_eq!(separators.len(), 1);
             assert_eq!(separators.first().is_some(), true);
             assert_eq!(separators.first().unwrap().as_ref(), &1);
-            assert_eq!(separators.get(1).unwrap().as_ref(), &(DEGREE as i32));
+            assert_eq!(children.len(), 2);
 
             let mut separator_index = 0;
             children.iter().for_each(|child| {
                 if let Node::Leaf {key_vals, ..} = &*child.borrow() {
                     key_vals.iter().for_each(|(key, value): &(Rc<i32>, String)| {
-                        assert!(separators[separator_index].as_ref() >= key.as_ref());
+                        match separators.get(separator_index) {
+                            None => {
+                                assert!(separators.last().unwrap().as_ref() <= key.as_ref());
+                            }
+                            Some(separator_val) => {
+                                assert!(separator_val.as_ref() > key.as_ref());
+                            }
+                        }
                         assert_eq!(&key.as_ref().to_string(), value);
                     })
                 }

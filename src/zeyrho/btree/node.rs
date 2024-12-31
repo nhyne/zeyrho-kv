@@ -103,8 +103,9 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
 
     }
 
-    pub(super) fn split_leaf_node(link_to_self: &Rc<RefCell<Self>>) -> (Rc<RefCell<Self>>, Rc<K>, Rc<RefCell<Self>>){
-        if let Node::Leaf {key_vals/*, next, prev*/} = &mut *link_to_self.borrow_mut() {
+    // returns the new separator and the new right node. Self will become the left node
+    pub(super) fn split_borrowed_leaf_node(self: &mut Self) -> (Rc<K>, Rc<RefCell<Self>>) {
+        if let Node::Leaf {key_vals, ..} = self {
             let mid = key_vals.len() / 2;
 
             let split_point = key_vals[mid].0.clone();
@@ -114,10 +115,16 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
                 key_vals: new_keys_padded
             }));
 
-            (link_to_self.clone(), split_point, new_right_node)
+            (split_point, new_right_node)
         } else {
-            panic!("trying to split leaf node on link node");
+            panic!("trying to split leaf node on link")
         }
+
+    }
+
+    pub(super) fn split_leaf_node(link_to_self: &Rc<RefCell<Self>>) -> (Rc<RefCell<Self>>, Rc<K>, Rc<RefCell<Self>>){
+        let (split, right) = (*link_to_self.borrow_mut()).split_borrowed_leaf_node();
+        (link_to_self.clone(), split, right)
     }
 }
 
