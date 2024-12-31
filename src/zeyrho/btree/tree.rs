@@ -121,10 +121,12 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
             }
             Node::Link { separators, children } => {
 
+                println!("inserting {:?} into link", inserted_key);
                 let mut child_to_update = separators.iter().position(|k| {
                    k.as_ref() > inserted_key.as_ref()
                 });
 
+                println!("child to update: {:?}", child_to_update);
                 // if we're inserting the biggest and the child location is empty then create new leaf and return current link
                 if let None = child_to_update {
                     if separators.len() == SEPARATORS_MAX_SIZE {
@@ -139,13 +141,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                     }
                     child_to_update = Some(CHILDREN_MAX_SIZE - 1);
                 }
-
-                if children.len() < CHILDREN_MAX_SIZE {
-                    if let Some(to_update) = child_to_update {
-                        children.insert(to_update, Rc::new(RefCell::new(Node::new_leaf_with_kv(inserted_key, inserted_value))));
-                        return (None, None);
-                    }
-                }
+                println!("child to update: {:?}", child_to_update);
 
                 let child = children[child_to_update.unwrap()].clone();
 
@@ -287,7 +283,9 @@ mod tests {
     fn test_insert_smaller_keys() {
         let mut tree = create_tree();
         for i in (0..DEGREE * 3).rev() {
+            println!("inserting {}", i);
             tree.insert(i as i32, i.to_string());
+            println!("-----------------------\n")
         }
 
         // with DEGREE = 3 tree should look like:
