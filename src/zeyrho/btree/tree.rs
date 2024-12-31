@@ -260,9 +260,7 @@ mod tests {
     fn test_full_root_link_node() {
         let mut tree = create_tree();
         for i in 0..(DEGREE * 3) {
-            println!("inserting: {:?}", i);
             tree.insert(i as i32, i.to_string());
-            println!("------------------------\n");
         }
 
         let root = tree.root.as_ref().unwrap().borrow();
@@ -289,13 +287,51 @@ mod tests {
     fn test_insert_smaller_keys() {
         let mut tree = create_tree();
         for i in (0..DEGREE * 3).rev() {
-            println!("inserting: {:?}", i);
             tree.insert(i as i32, i.to_string());
-            println!("------------------------\n");
         }
 
+        // with DEGREE = 3 tree should look like:
+        /*
+        root: 5
+            left link: 1 , 3
+                left leaf: 0
+                mid leaf: 1, 2
+                right leaf: 3, 4
+            right link: 7
+                left leaf: 5, 6
+                right leaf: 8
+         */
+
         println!("tree: {}", tree);
-        // TODO: this works right now, actually write the test code though
-        assert!(true);
+        let mut separator_index = 0;
+        let expected_separators = vec![vec![&1, &3], vec![&7]];
+
+        let mut child_index = 0;
+        let expected_children = vec![vec![&0], vec![&1, &2], vec![&3,&4], vec![&5, &6], vec![&7, &8]];
+
+        if let Node::Link { separators, children } = tree.root.unwrap().borrow().deref() {
+            assert_eq!(separators.len(), 1);
+
+
+            children.iter().for_each(|child| {
+                if let Node::Link {separators, children, ..} = &*child.borrow() {
+                    let collected: Vec<&i32> = separators.iter().map(|s|  s.as_ref()).collect();
+                    assert_eq!(expected_separators[separator_index], collected);
+                    separator_index += 1;
+
+                    for child in children.iter() {
+                        if let Node::Leaf {key_vals, ..} = child.borrow().deref() {
+                            let collected : Vec<&i32> = key_vals.iter().map(|(k, _) : &(Rc<i32>, String)| k.as_ref()).collect();
+                            assert_eq!(expected_children[child_index], collected);
+                        }
+                        child_index += 1;
+                    }
+
+                }
+            });
+        } else {
+            panic!("root is leaf node when it should be link node");
+        }
+
     }
 }
