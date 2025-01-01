@@ -1,9 +1,8 @@
 use crate::zeyrho::btree::node::Node;
-use crate::zeyrho::btree::{CHILDREN_MAX_SIZE, DEGREE, SEPARATORS_MAX_SIZE};
+use crate::zeyrho::btree::{CHILDREN_MAX_SIZE, DEGREE, MAX_KVS_IN_LEAF, SEPARATORS_MAX_SIZE};
 use std::cell::RefCell;
 use std::fmt::{Debug, Display, Formatter};
 use std::rc::Rc;
-use tonic::codegen::tokio_stream::StreamExt;
 /*
 TODO:
     We have some problems with the Rc pointers to neighbors. I'm not sure if these should really be owning references, probably need to be weak ownership and during the
@@ -72,16 +71,15 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
             return;
         }
 
-        match self.insert_internal(&self.root.as_ref().unwrap().clone(), Rc::new(key), value) {
-            Some((new_separator, new_node)) => {
-                let new_root = Rc::new(RefCell::new(Node::Link {
-                    separators: vec![new_separator],
-                    children: vec![self.root.take().unwrap(), new_node],
-                }));
+        if let Some((new_separator, new_node)) =
+            self.insert_internal(&self.root.as_ref().unwrap().clone(), Rc::new(key), value)
+        {
+            let new_root = Rc::new(RefCell::new(Node::Link {
+                separators: vec![new_separator],
+                children: vec![self.root.take().unwrap(), new_node],
+            }));
 
-                self.root = Some(new_root)
-            }
-            _ => {}
+            self.root = Some(new_root)
         }
     }
 
@@ -105,10 +103,9 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                     .position(|(k, _)| k.as_ref() > inserted_key.as_ref())
                     .unwrap_or(key_vals.len());
 
-                let pk = inserted_key.clone();
                 key_vals.insert(pos, (inserted_key, inserted_value));
 
-                if key_vals.len() <= CHILDREN_MAX_SIZE {
+                if key_vals.len() <= MAX_KVS_IN_LEAF {
                     return None;
                 }
 
@@ -143,23 +140,22 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                 let child = children[child_to_update.unwrap()].clone();
 
                 // Here somewhere we have a problem bubbling up the 7
-                match self.insert_internal(&child, inserted_key, inserted_value) {
-                    Some((new_separator, new_node)) => {
-                        Node::insert_separator_and_child_into_link(
-                            separators,
-                            children,
-                            new_separator,
-                            new_node,
-                        );
-                        if separators.len() <= SEPARATORS_MAX_SIZE {
-                            return None;
-                        }
-
-                        let (new_sep, new_right) = (*node_ref).split_borrowed_link_node(node);
-
-                        return Some((new_sep, new_right));
+                if let Some((new_separator, new_node)) =
+                    self.insert_internal(&child, inserted_key, inserted_value)
+                {
+                    Node::insert_separator_and_child_into_link(
+                        separators,
+                        children,
+                        new_separator,
+                        new_node,
+                    );
+                    if separators.len() <= SEPARATORS_MAX_SIZE {
+                        return None;
                     }
-                    _ => {}
+
+                    let (new_sep, new_right) = (*node_ref).split_borrowed_link_node();
+
+                    return Some((new_sep, new_right));
                 }
 
                 None
@@ -212,7 +208,7 @@ mod tests {
         } = &*root
         {
             assert_eq!(separators.len(), 1);
-            assert_eq!(separators.first().is_some(), true);
+            assert!(!separators.is_empty());
             assert_eq!(separators.first().unwrap().as_ref(), &1);
             assert_eq!(children.len(), 2);
 
@@ -243,8 +239,8 @@ mod tests {
     #[test]
     fn test_full_root_link_node() {
         let mut tree = create_tree();
-        for i in 0..(5) {
-            tree.insert(i as i32, i.to_string());
+        for i in 0..5 {
+            tree.insert(i, i.to_string());
         }
 
         let root = tree.root.as_ref().unwrap().borrow();
@@ -292,10 +288,10 @@ mod tests {
          */
 
         let mut separator_index = 0;
-        let expected_separators = vec![vec![&1, &3], vec![&7]];
+        let expected_separators = [vec![&1, &3], vec![&7]];
 
         let mut child_index = 0;
-        let expected_children = vec![
+        let expected_children = [
             vec![&0],
             vec![&1, &2],
             vec![&3, &4],

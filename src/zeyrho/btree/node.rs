@@ -95,10 +95,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
         }
     }
 
-    pub(super) fn split_borrowed_link_node(
-        &mut self,
-        link_to_self: &Rc<RefCell<Node<K, V>>>,
-    ) -> (Rc<K>, Rc<RefCell<Self>>) {
+    pub(super) fn split_borrowed_link_node(&mut self) -> (Rc<K>, Rc<RefCell<Self>>) {
         if let Node::Link {
             separators,
             children,
@@ -134,7 +131,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
     pub(super) fn split_link_node(
         self_rc: &Rc<RefCell<Self>>,
     ) -> (Rc<RefCell<Self>>, Rc<K>, Rc<RefCell<Self>>) {
-        let (sep, new_right) = (*self_rc.borrow_mut()).split_borrowed_link_node(self_rc);
+        let (sep, new_right) = (*self_rc.borrow_mut()).split_borrowed_link_node();
 
         if let Node::Link { children, .. } = new_right.borrow().deref() {
             return (children[0].clone(), sep, new_right.clone());
@@ -198,7 +195,7 @@ mod tests {
         if let Node::Leaf { key_vals, .. } = right.borrow().deref() {
             let collected_seps: Vec<&i32> = key_vals
                 .iter()
-                .map(|(k, v): &(Rc<i32>, String)| k.as_ref())
+                .map(|(k, _): &(Rc<i32>, String)| k.as_ref())
                 .collect();
             assert_eq!(collected_seps, vec![&3, &4])
         };
@@ -217,13 +214,8 @@ mod tests {
         }));
 
         let mut link_ref = link_node.borrow_mut();
-        if let Node::Link {
-            separators,
-            children,
-            ..
-        } = &mut *link_ref
-        {
-            let (new_sep, new_right) = (&mut *link_ref).split_borrowed_link_node(&link_node);
+        if let Node::Link { .. } = &mut *link_ref {
+            let (new_sep, new_right) = (*link_ref).split_borrowed_link_node();
 
             if let Node::Link {
                 separators,
@@ -235,12 +227,12 @@ mod tests {
                     separators.iter().map(|k: &Rc<i32>| k.as_ref()).collect();
                 assert_eq!(vec![&2], collected_seps);
 
-                let expected_children_keys = vec![vec![&1], vec![&2]];
+                let expected_children_keys = [vec![&1], vec![&2]];
                 for i in 0..children.len() {
                     if let Node::Leaf { key_vals, .. } = children[i].borrow().deref() {
                         let collected_keys: Vec<&i32> = key_vals
                             .iter()
-                            .map(|(k, v): &(Rc<i32>, String)| k.as_ref())
+                            .map(|(k, _): &(Rc<i32>, String)| k.as_ref())
                             .collect();
                         assert_eq!(expected_children_keys[i], collected_keys);
                     }
@@ -255,12 +247,12 @@ mod tests {
                 let collected_seps: Vec<&i32> =
                     separators.iter().map(|k: &Rc<i32>| k.as_ref()).collect();
                 assert_eq!(vec![&4], collected_seps);
-                let expected_children_keys = vec![vec![&3], vec![&4, &5]];
+                let expected_children_keys = [vec![&3], vec![&4, &5]];
                 for i in 0..children.len() {
                     if let Node::Leaf { key_vals, .. } = children[i].borrow().deref() {
                         let collected_keys: Vec<&i32> = key_vals
                             .iter()
-                            .map(|(k, v): &(Rc<i32>, String)| k.as_ref())
+                            .map(|(k, _): &(Rc<i32>, String)| k.as_ref())
                             .collect();
                         assert_eq!(expected_children_keys[i], collected_keys);
                     }
