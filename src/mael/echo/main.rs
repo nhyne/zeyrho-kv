@@ -1,6 +1,6 @@
-use std::sync::Arc;
-use maelstrom::{done, Node, Result, Runtime};
 use maelstrom::protocol::Message;
+use maelstrom::{done, Node, Result, Runtime};
+use std::sync::Arc;
 use tonic::async_trait;
 
 pub(crate) fn main() -> Result<()> {
@@ -26,4 +26,3 @@ impl Node for EchoHandler {
         done(runtime, request)
     }
 }
-

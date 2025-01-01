@@ -4,17 +4,17 @@ use nanoid::nanoid;
 use rmp_serde::{Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
-use std::fs;
 use std::sync::mpsc::channel;
+use std::sync::{Arc, Mutex};
 use std::thread::spawn;
 use tonic::service::Interceptor;
 use tonic::{async_trait, transport::Server, Request, Response, Status};
 use zeyrho::zeyrho::kv_store::kv_store_server::{KvStore, KvStoreServer};
 use zeyrho::zeyrho::kv_store::{
-    GetResponse, GetRequest, SetRequest, SetResponse, DeleteRequest, DeleteResponse,
+    DeleteRequest, DeleteResponse, GetRequest, GetResponse, SetRequest, SetResponse,
 };
 
 const DATA_DIR: &str = "data";
@@ -110,7 +110,10 @@ fn journal_request(request: &SetRequest) -> Result<String, std::io::Error> {
     Ok(id)
 }
 
-fn process_journal_file(file_name: String, hash_map: &mut HashMap<String, i32>) -> Result<(), std::io::Error> {
+fn process_journal_file(
+    file_name: String,
+    hash_map: &mut HashMap<String, i32>,
+) -> Result<(), std::io::Error> {
     let mut buf = Vec::new();
     let mut file = File::open(&("data/".to_string() + &file_name)).expect("opening file failed");
     file.read_to_end(&mut buf)?;
@@ -134,11 +137,11 @@ impl KvStore for SimpleKvStore {
         let journal_id = journal_request(request.get_ref())
             .map_err(|_| Status::internal("error journaling request"))?;
 
-        self.sender.send(journal_id).map_err(|e| Status::internal("error queueing journal for processing"))?;
+        self.sender
+            .send(journal_id)
+            .map_err(|e| Status::internal("error queueing journal for processing"))?;
 
-        Ok(Response::new(SetResponse {
-            confirmation: true,
-        }))
+        Ok(Response::new(SetResponse { confirmation: true }))
     }
 
     async fn get(&self, request: Request<GetRequest>) -> Result<Response<GetResponse>, Status> {
@@ -151,13 +154,16 @@ impl KvStore for SimpleKvStore {
         }))
     }
 
-    async fn delete(&self, request: Request<DeleteRequest>) -> Result<Response<DeleteResponse>, Status> {
+    async fn delete(
+        &self,
+        request: Request<DeleteRequest>,
+    ) -> Result<Response<DeleteResponse>, Status> {
         let mut q = self.hash_map.lock().unwrap();
 
         let val = q.remove(&request.get_ref().key);
 
         Ok(Response::new(DeleteResponse {
-            confirmation: val.is_some()
+            confirmation: val.is_some(),
         }))
     }
 }

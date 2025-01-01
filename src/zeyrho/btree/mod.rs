@@ -1,5 +1,5 @@
-pub mod tree;
 mod node;
+pub mod tree;
 
 const DEGREE: usize = 3;
 const SEPARATORS_MAX_SIZE: usize = DEGREE - 1;

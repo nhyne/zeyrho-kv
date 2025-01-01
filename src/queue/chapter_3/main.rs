@@ -4,18 +4,21 @@ use nanoid::nanoid;
 use rmp_serde::{Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use std::fs;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
-use std::fs;
 use std::pin::Pin;
 use std::sync::mpsc::channel;
+use std::sync::{Arc, Mutex};
 use std::thread::spawn;
+use tonic::codegen::tokio_stream::Stream;
 use tonic::service::Interceptor;
 use tonic::{async_trait, transport::Server, Request, Response, Status, Streaming};
-use tonic::codegen::tokio_stream::Stream;
 use zeyrho::zeyrho::queue::queue_server::{Queue, QueueServer};
-use zeyrho::zeyrho::queue::{DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, SizeRequest, SizeResponse, ReplicateDataRequest, ReplicateDataResponse};
+use zeyrho::zeyrho::queue::{
+    DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, ReplicateDataRequest,
+    ReplicateDataResponse, SizeRequest, SizeResponse,
+};
 
 const DATA_DIR: &str = "data";
 
@@ -35,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_v1()
         .unwrap();
 
-    let queue =Arc::new(Mutex::new(VecDeque::new()));
+    let queue = Arc::new(Mutex::new(VecDeque::new()));
     let cloned_queue = queue.clone();
     let queue_service = SimpleQueue {
         queue,
@@ -67,7 +70,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ))
         .serve(address)
         .await?;
-
 
     Ok(())
 }
@@ -113,23 +115,24 @@ fn journal_request(request: &EnqueueRequest) -> Result<String, std::io::Error> {
     Ok(id)
 }
 
-fn process_journal_file(file_name: String, queue: &mut VecDeque<i32>) -> Result<(), std::io::Error> {
-
+fn process_journal_file(
+    file_name: String,
+    queue: &mut VecDeque<i32>,
+) -> Result<(), std::io::Error> {
     let mut buf = Vec::new();
     let mut file = File::open(&("data/".to_string() + &file_name)).expect("opening file failed");
     file.read_to_end(&mut buf)?;
 
-    let byte_slice : &[u8] = &buf;
+    let byte_slice: &[u8] = &buf;
 
     let mut de = Deserializer::new(byte_slice);
-    let request_body : EnqueueRequest = Deserialize::deserialize(&mut de).unwrap();
+    let request_body: EnqueueRequest = Deserialize::deserialize(&mut de).unwrap();
 
     queue.push_back(request_body.number);
 
     fs::remove_file(&("data/".to_string() + &file_name))?;
     println!("number was: {}", request_body.number);
     Ok(())
-
 }
 
 #[async_trait]
@@ -143,7 +146,9 @@ impl Queue for SimpleQueue {
             .map_err(|_| Status::internal("error journaling request"))?;
 
         let cloned_id = journal_id.clone();
-        self.sender.send(journal_id).map_err(|e| Status::internal("error queueing journal for processing"))?;
+        self.sender
+            .send(journal_id)
+            .map_err(|e| Status::internal("error queueing journal for processing"))?;
 
         Ok(Response::new(EnqueueResponse {
             confirmation: { cloned_id },
@@ -175,9 +180,13 @@ impl Queue for SimpleQueue {
         Ok(Response::new(SizeResponse { size: { s } }))
     }
 
-    type ReplicateDataStream = Pin<Box<dyn Stream<Item = Result<ReplicateDataResponse, Status>> + Send>>;
+    type ReplicateDataStream =
+        Pin<Box<dyn Stream<Item = Result<ReplicateDataResponse, Status>> + Send>>;
 
-    async fn replicate_data(&self, request: Request<Streaming<ReplicateDataRequest>>) -> Result<Response<Self::ReplicateDataStream>, Status> {
+    async fn replicate_data(
+        &self,
+        request: Request<Streaming<ReplicateDataRequest>>,
+    ) -> Result<Response<Self::ReplicateDataStream>, Status> {
         todo!()
     }
 }

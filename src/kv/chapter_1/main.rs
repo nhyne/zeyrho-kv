@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use tonic::{async_trait, transport::Server, Request, Response, Status};
 use zeyrho::zeyrho::kv_store::kv_store_server::{KvStore, KvStoreServer};
-use zeyrho::zeyrho::kv_store::{DeleteRequest, DeleteResponse, GetRequest, GetResponse, SetRequest, SetResponse};
+use zeyrho::zeyrho::kv_store::{
+    DeleteRequest, DeleteResponse, GetRequest, GetResponse, SetRequest, SetResponse,
+};
 
 mod proto {
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
@@ -44,7 +46,10 @@ impl KvStore for SimpleKVStore {
         todo!()
     }
 
-    async fn delete(&self, request: Request<DeleteRequest>) -> Result<Response<DeleteResponse>, Status> {
+    async fn delete(
+        &self,
+        request: Request<DeleteRequest>,
+    ) -> Result<Response<DeleteResponse>, Status> {
         todo!()
     }
 }

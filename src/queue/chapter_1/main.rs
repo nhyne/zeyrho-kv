@@ -1,14 +1,17 @@
 use rand::prelude::*;
 use std::collections::VecDeque;
 use std::pin::Pin;
-use tokio::sync::mpsc;
-use std::sync::{Mutex};
+use std::sync::Mutex;
 use std::time;
-use tonic::{async_trait, transport::Server, Request, Response, Status, Streaming};
-use tonic::codegen::tokio_stream::Stream;
+use tokio::sync::mpsc;
 use tonic::codegen::tokio_stream::wrappers::ReceiverStream;
+use tonic::codegen::tokio_stream::Stream;
+use tonic::{async_trait, transport::Server, Request, Response, Status, Streaming};
 use zeyrho::zeyrho::queue::queue_server::{Queue, QueueServer};
-use zeyrho::zeyrho::queue::{DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, ReplicateDataRequest, ReplicateDataResponse, SizeRequest, SizeResponse};
+use zeyrho::zeyrho::queue::{
+    DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, ReplicateDataRequest,
+    ReplicateDataResponse, SizeRequest, SizeResponse,
+};
 
 mod proto {
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
@@ -89,9 +92,13 @@ impl Queue for SimpleQueue {
         Ok(Response::new(SizeResponse { size: { s } }))
     }
 
-    type ReplicateDataStream = Pin<Box<dyn Stream<Item=Result<ReplicateDataResponse, Status>> + Send>>;
+    type ReplicateDataStream =
+        Pin<Box<dyn Stream<Item = Result<ReplicateDataResponse, Status>> + Send>>;
 
-    async fn replicate_data(&self, request: Request<Streaming<ReplicateDataRequest>>) -> Result<Response<Self::ReplicateDataStream>, Status> {
+    async fn replicate_data(
+        &self,
+        request: Request<Streaming<ReplicateDataRequest>>,
+    ) -> Result<Response<Self::ReplicateDataStream>, Status> {
         let (tx, rx) = mpsc::channel(10);
 
         let _ = tokio::spawn(async move {
@@ -111,7 +118,9 @@ impl Queue for SimpleQueue {
             }
         });
 
-    let outbound = ReceiverStream::new(rx);
-    Ok(Response::new(Box::pin(outbound) as Self::ReplicateDataStream))
-}
+        let outbound = ReceiverStream::new(rx);
+        Ok(Response::new(
+            Box::pin(outbound) as Self::ReplicateDataStream
+        ))
+    }
 }
