@@ -27,6 +27,10 @@ path = "src/kv/chapter_2/main.rs"
 name = "echo"
 path = "src/mael/echo/main.rs"
 
+[[bin]]
+name = "tree"
+path = "src/main.rs"
+
 [dependencies]
 prost = "0.13.2"
 tonic = "0.12.2"

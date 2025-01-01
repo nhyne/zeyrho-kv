@@ -7,9 +7,6 @@ use std::rc::Rc;
 TODO:
     We have some problems with the Rc pointers to neighbors. I'm not sure if these should really be owning references, probably need to be weak ownership and during the
     drop of a Node we update pointers. The problem with this is that it's going to get _really_ complicated. How about for now we just drop the `next` and `previous` pointers.
-
-    Let's start with a basic BST without any pointers. It'll be easier and then after we can try doing the pointers to next and previous.
-
  */
 
 #[derive(Debug)]
@@ -57,8 +54,6 @@ impl<K: Ord + Debug, V: Debug> BPlusTree<K, V> {
         }
     }
 
-    // TODO: The bubbling up is not correct right now. Inserting 0-6 is fine, but on insert of 7 we end up with a root Link node of just [7], with 3 children, which makes no sense.
-
     // the left Option is the new separator and the right is the new right node. We don't need to do anything with the left node b/c the parent is already pointing to it
     fn insert_internal(
         &mut self,
@@ -68,10 +63,7 @@ impl<K: Ord + Debug, V: Debug> BPlusTree<K, V> {
     ) -> Option<(Rc<K>, Rc<RefCell<Node<K, V>>>)> {
         let mut node_ref = node.borrow_mut();
         match &mut *node_ref {
-            Node::Leaf {
-                key_vals, /* next, */
-                ..
-            } => {
+            Node::Leaf { key_vals, .. } => {
                 let pos = key_vals
                     .iter()
                     .position(|(k, _)| k.as_ref() > inserted_key.as_ref())
@@ -83,8 +75,6 @@ impl<K: Ord + Debug, V: Debug> BPlusTree<K, V> {
                     return None;
                 }
 
-                // the problem with inserting 7 comes after this line
-                // the link node generation is working properly
                 let (split, new_right) = (*node_ref).split_borrowed_leaf_node();
 
                 Some((split, new_right))
@@ -113,7 +103,6 @@ impl<K: Ord + Debug, V: Debug> BPlusTree<K, V> {
 
                 let child = children[child_to_update.unwrap()].clone();
 
-                // Here somewhere we have a problem bubbling up the 7
                 if let Some((new_separator, new_node)) =
                     self.insert_internal(&child, inserted_key, inserted_value)
                 {
@@ -138,6 +127,10 @@ impl<K: Ord + Debug, V: Debug> BPlusTree<K, V> {
     }
 }
 
+/*
+TODO: Tests could have some better helper functions to reduce code duplication
+TODO: Would be nice if the tests weren't based on DEGREE = 3
+ */
 #[cfg(test)]
 mod tests {
     use super::*;
