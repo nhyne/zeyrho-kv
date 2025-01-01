@@ -13,7 +13,7 @@ TODO:
  */
 
 #[derive(Debug)]
-pub struct BPlusTree<K: Ord + std::fmt::Debug, V: std::fmt::Debug> {
+pub struct BPlusTree<K: Ord + Debug, V: Debug> {
     pub root: Option<Rc<RefCell<Node<K, V>>>>,
 }
 
@@ -26,48 +26,22 @@ impl<K: Debug + Ord, V: Debug> Display for BPlusTree<K, V> {
             Some(node) => f.write_str(&format!("{}\n", *node.borrow())),
         }
     }
-
-    // fn depth_fmt(&self, node: Rc<RefCell<Node<K, V>>>, f: &mut Formatter<'_>, depth: i32) -> std::fmt::Result {
-    //     match &*node.borrow() {
-    //         Node::Leaf { key_vals, .. } => {
-    //             f.write_str(&format!("key vals: {:?}", key_vals))?
-    //         }
-    //         Node::Link { separators, children, .. } => {
-    //             f.write_str(&format!("separators: {:?}", separators))?;
-    //             children.iter().for_each(|child| {
-    //
-    //             })
-    //
-    //         }
-    //     }
-    //     todo!()
-    // }
 }
 
-//
-// impl<K: Ord + Debug, V: Debug> Drop for BPlusTree<K, V>  {
-//     fn drop(&mut self) {
-//         todo!()
-//     }
-// }
-
-impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Default for BPlusTree<K, V> {
+impl<K: Ord + Debug, V: Debug> Default for BPlusTree<K, V> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
+impl<K: Ord + Debug, V: Debug> BPlusTree<K, V> {
     pub fn new() -> Self {
         BPlusTree { root: None }
     }
 
     pub fn insert(&mut self, key: K, value: V) {
         if self.root.is_none() {
-            self.root = Some(Rc::new(RefCell::new(Node::new_leaf_with_kv(
-                Rc::new(key),
-                value,
-            ))));
+            self.root = Some(Node::new_leaf_with_kv(Rc::new(key), value));
             return;
         }
 
@@ -130,7 +104,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                         if children.get(DEGREE - 1).is_none() {
                             // no child is here, we need to make a new one
                             let new_leaf = Node::new_leaf_with_kv(inserted_key, inserted_value);
-                            children.push(Rc::new(RefCell::new(new_leaf)));
+                            children.push(new_leaf);
                             return None;
                         }
                     }

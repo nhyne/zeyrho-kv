@@ -46,7 +46,7 @@ impl<K: Debug + Ord, V: Debug> Display for Node<K, V> {
     }
 }
 
-impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
+impl<K: Ord + Debug, V: Debug> Node<K, V> {
     pub(super) fn new_leaf() -> Self {
         Node::Leaf {
             key_vals: Vec::new(),
@@ -62,15 +62,15 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
         }
     }
 
-    pub(super) fn new_leaf_with_kv(key: Rc<K>, value: V) -> Self {
+    pub(super) fn new_leaf_with_kv(key: Rc<K>, value: V) -> Rc<RefCell<Self>> {
         let mut vec = Vec::new();
         vec.push((key, value));
 
-        Node::Leaf {
+        Rc::new(RefCell::new(Node::Leaf {
             key_vals: vec,
             // next: None,
             // prev: None,
-        }
+        }))
     }
 
     pub(super) fn insert_separator_and_child_into_link(
