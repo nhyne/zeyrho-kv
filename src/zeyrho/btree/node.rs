@@ -1,4 +1,3 @@
-use crate::zeyrho::btree::SEPARATORS_MAX_SIZE;
 use std::cell::RefCell;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
@@ -28,7 +27,7 @@ impl<K: Debug + Ord, V: Debug> Node<K, V> {
             Node::Link { separators, children, .. } => {
                 f.write_str(&" ".repeat(depth))?;
                 f.write_str(&format!("separators: {:?}\n", separators))?;
-                let _ = children.iter().for_each(|child| {
+                children.iter().for_each(|child| {
                     let _ = f.write_str(&" ".repeat(depth));
                     let _ = (*child).borrow().fmt_depth(f, depth + 1);
                 });
@@ -123,7 +122,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Node<K, V> {
     }
 
     // returns the new separator and the new right node. Self will become the left node
-    pub(super) fn split_borrowed_leaf_node(self: &mut Self) -> (Rc<K>, Rc<RefCell<Self>>) {
+    pub(super) fn split_borrowed_leaf_node(&mut self) -> (Rc<K>, Rc<RefCell<Self>>) {
         if let Node::Leaf {key_vals, ..} = self {
             let mid = key_vals.len() / 2;
 

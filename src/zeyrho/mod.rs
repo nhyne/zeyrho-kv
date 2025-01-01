@@ -9,7 +9,7 @@ pub mod btree;
 
 
 trait BTree<K: Ord, V> {
-    fn insert(&mut self, key: K, value: V) -> ();
+    fn insert(&mut self, key: K, value: V);
     fn get(&self, key: &K) -> Option<V>;
     fn delete(&mut self, key: &K) -> bool;
     fn scan(&self, query: String) -> [V];
@@ -26,7 +26,7 @@ pub struct InMemoryBTree<K: Ord, V> {
 }
 
 
-pub fn put_together_list() -> () {
+pub fn put_together_list() {
 
     let only_key = "adam".to_string();
     let only_value = 32;

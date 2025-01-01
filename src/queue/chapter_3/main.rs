@@ -1,23 +1,19 @@
 mod client;
 
 use nanoid::nanoid;
-use rand::prelude::*;
 use rmp_serde::{Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::error::Error;
 use std::fs::File;
-use std::io::{BufWriter, Read, Write};
-use std::ops::Deref;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::{fs, time};
+use std::io::{Read, Write};
+use std::sync::{Arc, Mutex};
+use std::fs;
 use std::pin::Pin;
-use std::sync::mpsc::{channel, Receiver};
+use std::sync::mpsc::channel;
 use std::thread::spawn;
 use tonic::service::Interceptor;
 use tonic::{async_trait, transport::Server, Request, Response, Status, Streaming};
 use tonic::codegen::tokio_stream::Stream;
-use tonic_reflection;
 use zeyrho::zeyrho::queue::queue_server::{Queue, QueueServer};
 use zeyrho::zeyrho::queue::{DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, SizeRequest, SizeResponse, ReplicateDataRequest, ReplicateDataResponse};
 
@@ -53,7 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut grabbed_lock = cloned_queue.lock().unwrap();
 
             // I don't believe that this is good rust code, but I'm not sure how else to just pass the contents of the lock...
-            let journal_result = process_journal_file(journaled, &mut *grabbed_lock);
+            let journal_result = process_journal_file(journaled, &mut grabbed_lock);
             match journal_result {
                 Ok(_) => continue,
                 Err(e) => println!("error processing journal: {}", e),
@@ -92,9 +88,9 @@ struct LoadShed {
 
 impl Interceptor for LoadShed {
     fn call(&mut self, request: Request<()>) -> Result<Request<()>, Status> {
-        let mut grabbed_lock = self.shed.lock().unwrap();
+        let grabbed_lock = self.shed.lock().unwrap();
 
-        let current_val = grabbed_lock.clone();
+        let current_val = *grabbed_lock;
 
         if current_val {
             Err(Status::resource_exhausted("too many requests"))

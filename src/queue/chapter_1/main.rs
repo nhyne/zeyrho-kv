@@ -1,6 +1,5 @@
 use rand::prelude::*;
 use std::collections::VecDeque;
-use std::ops::Deref;
 use std::pin::Pin;
 use tokio::sync::mpsc;
 use std::sync::{Mutex};
@@ -8,7 +7,6 @@ use std::time;
 use tonic::{async_trait, transport::Server, Request, Response, Status, Streaming};
 use tonic::codegen::tokio_stream::Stream;
 use tonic::codegen::tokio_stream::wrappers::ReceiverStream;
-use tonic_reflection;
 use zeyrho::zeyrho::queue::queue_server::{Queue, QueueServer};
 use zeyrho::zeyrho::queue::{DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, ReplicateDataRequest, ReplicateDataResponse, SizeRequest, SizeResponse};
 

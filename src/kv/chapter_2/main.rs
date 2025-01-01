@@ -1,21 +1,17 @@
 mod client;
 
 use nanoid::nanoid;
-use rand::prelude::*;
 use rmp_serde::{Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
-use std::error::Error;
+use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufWriter, Read, Write};
-use std::ops::Deref;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::{fs, time};
-use std::sync::mpsc::{channel, Receiver};
+use std::io::{Read, Write};
+use std::sync::{Arc, Mutex};
+use std::fs;
+use std::sync::mpsc::channel;
 use std::thread::spawn;
 use tonic::service::Interceptor;
 use tonic::{async_trait, transport::Server, Request, Response, Status};
-use tonic_reflection;
 use zeyrho::zeyrho::kv_store::kv_store_server::{KvStore, KvStoreServer};
 use zeyrho::zeyrho::kv_store::{
     GetResponse, GetRequest, SetRequest, SetResponse, DeleteRequest, DeleteResponse,
@@ -52,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut grabbed_lock = cloned_queue.lock().unwrap();
 
             // I don't believe that this is good rust code, but I'm not sure how else to just pass the contents of the lock...
-            let journal_result = process_journal_file(journaled, &mut *grabbed_lock);
+            let journal_result = process_journal_file(journaled, &mut grabbed_lock);
             match journal_result {
                 Ok(_) => continue,
                 Err(e) => println!("error processing journal: {}", e),
@@ -89,9 +85,9 @@ struct LoadShed {
 
 impl Interceptor for LoadShed {
     fn call(&mut self, request: Request<()>) -> Result<Request<()>, Status> {
-        let mut grabbed_lock = self.shed.lock().unwrap();
+        let grabbed_lock = self.shed.lock().unwrap();
 
-        let current_val = grabbed_lock.clone();
+        let current_val = *grabbed_lock;
 
         if current_val {
             Err(Status::resource_exhausted("too many requests"))
@@ -146,7 +142,7 @@ impl KvStore for SimpleKvStore {
     }
 
     async fn get(&self, request: Request<GetRequest>) -> Result<Response<GetResponse>, Status> {
-        let mut q = self.hash_map.lock().unwrap();
+        let q = self.hash_map.lock().unwrap();
 
         let val = q.get(&request.get_ref().key);
 
@@ -161,10 +157,7 @@ impl KvStore for SimpleKvStore {
         let val = q.remove(&request.get_ref().key);
 
         Ok(Response::new(DeleteResponse {
-            confirmation: match val {
-                None => false,
-                Some(_) => true,
-            }
+            confirmation: val.is_some()
         }))
     }
 }

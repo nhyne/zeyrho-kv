@@ -1,6 +1,5 @@
 use std::cell::RefCell;
-use std::fmt::{Debug, Display, Formatter, Pointer};
-use std::ops::Deref;
+use std::fmt::{Debug, Display, Formatter};
 use std::rc::Rc;
 use tonic::codegen::tokio_stream::StreamExt;
 use crate::zeyrho::btree::node::Node;
@@ -21,7 +20,7 @@ pub struct BPlusTree<K: Ord + std::fmt::Debug, V: std::fmt::Debug> {
 
 impl<K: Debug + Ord, V: Debug> Display for BPlusTree<K, V> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&"root\n")?;
+        f.write_str("root\n")?;
 
         match &self.root {
             None => {
@@ -58,6 +57,12 @@ impl<K: Debug + Ord, V: Debug> Display for BPlusTree<K, V> {
 //     }
 // }
 
+
+impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> Default for BPlusTree<K, V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
     pub fn new() -> Self {
@@ -110,7 +115,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
 
                 // the problem with inserting 7 comes after this line
                 // the link node generation is working properly
-                let ( split, new_right )= (&mut *node_ref).split_borrowed_leaf_node();
+                let ( split, new_right )= (*node_ref).split_borrowed_leaf_node();
 
                 (Some(split), Some(new_right))
             }
@@ -121,17 +126,15 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                 });
 
                 // if we're inserting the biggest and the child location is empty then create new leaf and return current link
-                if let None = child_to_update {
+                if child_to_update.is_none() {
                     if separators.len() == SEPARATORS_MAX_SIZE {
                         // here we must insert into the right most subtree
-                        if let None = children.get(DEGREE - 1) {
+                        if children.get(DEGREE - 1).is_none() {
                             // no child is here, we need to make a new one
                             let new_leaf = Node::new_leaf_with_kv(inserted_key, inserted_value);
                             children.push(Rc::new(RefCell::new(new_leaf)));
                             return (None, None);
-                        } else {
-
-                        }
+                        } 
                     }
                     child_to_update = Some(children.len() - 1);
                 }
@@ -146,7 +149,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                             return (None, None);
                         }
 
-                        let (new_sep, new_right) = (&mut *node_ref).split_borrowed_link_node(node);
+                        let (new_sep, new_right) = (*node_ref).split_borrowed_link_node(node);
 
                         return (Some(new_sep), Some(new_right));
 
