@@ -19,7 +19,7 @@ use tonic::{async_trait, transport::Server, Request, Response, Status, Streaming
 use tonic::codegen::tokio_stream::Stream;
 use tonic_reflection;
 use zeyrho::zeyrho::queue::queue_server::{Queue, QueueServer};
-use zeyrho::zeyrho::queue::{DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, SizeRequest, SizeResponse, ReplicateDataRequest, ReplicatedDataResponse, ReplicateDataResponse};
+use zeyrho::zeyrho::queue::{DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, SizeRequest, SizeResponse, ReplicateDataRequest, ReplicateDataResponse};
 
 const DATA_DIR: &str = "data";
 

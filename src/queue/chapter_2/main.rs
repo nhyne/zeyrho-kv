@@ -11,15 +11,15 @@ use std::io::{BufWriter, Read, Write};
 use std::ops::Deref;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::{fs, time};
+use std::pin::Pin;
 use std::sync::mpsc::{channel, Receiver};
 use std::thread::spawn;
 use tonic::service::Interceptor;
-use tonic::{async_trait, transport::Server, Request, Response, Status};
+use tonic::{async_trait, transport::Server, Request, Response, Status, Streaming};
+use tonic::codegen::tokio_stream::Stream;
 use tonic_reflection;
 use zeyrho::zeyrho::queue::queue_server::{Queue, QueueServer};
-use zeyrho::zeyrho::queue::{
-    DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, SizeRequest, SizeResponse,
-};
+use zeyrho::zeyrho::queue::{DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, ReplicateDataRequest, ReplicateDataResponse, SizeRequest, SizeResponse};
 
 const DATA_DIR: &str = "data";
 
@@ -175,5 +175,11 @@ impl Queue for SimpleQueue {
         let s = self.queue.lock().unwrap().len() as i32;
 
         Ok(Response::new(SizeResponse { size: { s } }))
+    }
+
+    type ReplicateDataStream = Pin<Box<dyn Stream<Item = Result<ReplicateDataResponse, Status>> + Send>>;
+
+    async fn replicate_data(&self, request: Request<Streaming<ReplicateDataRequest>>) -> Result<Response<Self::ReplicateDataStream>, Status> {
+        todo!()
     }
 }
