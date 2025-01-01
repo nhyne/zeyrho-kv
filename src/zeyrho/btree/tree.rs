@@ -269,23 +269,59 @@ mod tests {
     }
 
     #[test]
+    fn test_middle_inserts() {
+        let mut tree = create_tree();
+        for i in vec![0, 12, 2, 10, 4, 8, 6].iter() {
+            tree.insert(*i, i.to_string());
+        }
+
+        let mut separator_index = 0;
+        let expected_separators = [vec![&2], vec![&6, &10]];
+
+        let mut child_index = 0;
+        let expected_children = [vec![&0], vec![&2], vec![&4], vec![&6, &8], vec![&10, &12]];
+
+        if let Node::Link {
+            separators,
+            children,
+        } = tree.root.unwrap().borrow().deref()
+        {
+            assert_eq!(separators.len(), 1);
+
+            children.iter().for_each(|child| {
+                if let Node::Link {
+                    separators,
+                    children,
+                    ..
+                } = &*child.borrow()
+                {
+                    let collected: Vec<&i32> = separators.iter().map(|s| s.as_ref()).collect();
+                    assert_eq!(expected_separators[separator_index], collected);
+                    separator_index += 1;
+
+                    for child in children.iter() {
+                        if let Node::Leaf { key_vals, .. } = child.borrow().deref() {
+                            let collected: Vec<&i32> = key_vals
+                                .iter()
+                                .map(|(k, _): &(Rc<i32>, String)| k.as_ref())
+                                .collect();
+                            assert_eq!(expected_children[child_index], collected);
+                        }
+                        child_index += 1;
+                    }
+                }
+            });
+        } else {
+            panic!("root is leaf node when it should be link node");
+        }
+    }
+
+    #[test]
     fn test_insert_smaller_keys() {
         let mut tree = create_tree();
         for i in (0..DEGREE * DEGREE).rev() {
             tree.insert(i as i32, i.to_string());
         }
-
-        // with DEGREE = 3 tree should look like:
-        /*
-        root: 5
-            left link: 1 , 3
-                left leaf: 0
-                mid leaf: 1, 2
-                right leaf: 3, 4
-            right link: 7
-                left leaf: 5, 6
-                right leaf: 8
-         */
 
         let mut separator_index = 0;
         let expected_separators = [vec![&1, &3], vec![&7]];

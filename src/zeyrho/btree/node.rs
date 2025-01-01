@@ -4,7 +4,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 #[derive(Debug, Clone)]
-pub enum Node<K: Ord + std::fmt::Debug, V: std::fmt::Debug> {
+pub enum Node<K: Ord + Debug, V: Debug> {
     Leaf {
         key_vals: Vec<(Rc<K>, V)>,
         // next: Option<Rc<RefCell<Node<K, V>>>>,
