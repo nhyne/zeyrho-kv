@@ -5,13 +5,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .out_dir("./src/zeyrho")
         .file_descriptor_set_path(out_dir.join("kv_store_descriptor.bin"))
         .type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]")
-        .compile(&["./protos/kv_store.proto"], &["proto"])?;
+        .compile_protos(&["./protos/kv_store.proto"], &["proto"])?;
 
     tonic_build::configure()
         .out_dir("./src/zeyrho")
         .file_descriptor_set_path(out_dir.join("queue_descriptor.bin"))
         .type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]")
-        .compile(&["./protos/queue.proto"], &["proto"])?;
+        .compile_protos(&["./protos/queue.proto"], &["proto"])?;
 
     Ok(())
 }

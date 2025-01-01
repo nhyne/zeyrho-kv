@@ -174,11 +174,9 @@ mod tests {
     use std::ops::Deref;
 
     fn create_leaf_with_kvs(items: Vec<i32>) -> Rc<RefCell<Node<i32, String>>> {
-        Rc::new(RefCell::new(
-            (Node::Leaf {
-                key_vals: items.iter().map(|k| (Rc::new(*k), k.to_string())).collect(),
-            }),
-        ))
+        Rc::new(RefCell::new(Node::Leaf {
+            key_vals: items.iter().map(|k| (Rc::new(*k), k.to_string())).collect(),
+        }))
     }
 
     #[test]

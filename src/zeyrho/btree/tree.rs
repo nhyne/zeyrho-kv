@@ -73,7 +73,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
         }
 
         match self.insert_internal(&self.root.as_ref().unwrap().clone(), Rc::new(key), value) {
-            (Some(new_separator), Some(new_node)) => {
+            Some((new_separator, new_node)) => {
                 let new_root = Rc::new(RefCell::new(Node::Link {
                     separators: vec![new_separator],
                     children: vec![self.root.take().unwrap(), new_node],
@@ -81,8 +81,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
 
                 self.root = Some(new_root)
             }
-            (None, Some(new_node)) => self.root = Some(new_node),
-            (_, _) => {}
+            _ => {}
         }
     }
 
@@ -94,7 +93,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
         node: &Rc<RefCell<Node<K, V>>>,
         inserted_key: Rc<K>,
         inserted_value: V,
-    ) -> (Option<Rc<K>>, Option<Rc<RefCell<Node<K, V>>>>) {
+    ) -> Option<(Rc<K>, Rc<RefCell<Node<K, V>>>)> {
         let mut node_ref = node.borrow_mut();
         match &mut *node_ref {
             Node::Leaf {
@@ -110,14 +109,14 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                 key_vals.insert(pos, (inserted_key, inserted_value));
 
                 if key_vals.len() <= CHILDREN_MAX_SIZE {
-                    return (None, None);
+                    return None;
                 }
 
                 // the problem with inserting 7 comes after this line
                 // the link node generation is working properly
                 let (split, new_right) = (*node_ref).split_borrowed_leaf_node();
 
-                (Some(split), Some(new_right))
+                Some((split, new_right))
             }
             Node::Link {
                 separators,
@@ -135,7 +134,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                             // no child is here, we need to make a new one
                             let new_leaf = Node::new_leaf_with_kv(inserted_key, inserted_value);
                             children.push(Rc::new(RefCell::new(new_leaf)));
-                            return (None, None);
+                            return None;
                         }
                     }
                     child_to_update = Some(children.len() - 1);
@@ -145,7 +144,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
 
                 // Here somewhere we have a problem bubbling up the 7
                 match self.insert_internal(&child, inserted_key, inserted_value) {
-                    (Some(new_separator), Some(new_node)) => {
+                    Some((new_separator, new_node)) => {
                         Node::insert_separator_and_child_into_link(
                             separators,
                             children,
@@ -153,20 +152,17 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
                             new_node,
                         );
                         if separators.len() <= SEPARATORS_MAX_SIZE {
-                            return (None, None);
+                            return None;
                         }
 
                         let (new_sep, new_right) = (*node_ref).split_borrowed_link_node(node);
 
-                        return (Some(new_sep), Some(new_right));
+                        return Some((new_sep, new_right));
                     }
-                    (None, Some(new_node)) => {
-                        panic!("no sep bubble, just new node")
-                    }
-                    (_, _) => {}
+                    _ => {}
                 }
 
-                (None, None)
+                None
             }
         }
     }
@@ -176,6 +172,7 @@ impl<K: Ord + std::fmt::Debug, V: std::fmt::Debug> BPlusTree<K, V> {
 mod tests {
     use super::*;
     use crate::zeyrho::btree::DEGREE;
+    use std::ops::Deref;
 
     fn create_tree() -> BPlusTree<i32, String> {
         BPlusTree::new()
