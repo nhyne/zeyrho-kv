@@ -7,8 +7,8 @@ use std::rc::{Rc, Weak};
 pub enum Node<K: Ord + Debug, V: Debug> {
     Leaf {
         key_vals: Vec<(Rc<K>, V)>,
-        next: Weak<RefCell<Self>>,
-        prev: Weak<RefCell<Self>>,
+        next: Option<Weak<RefCell<Self>>>,
+        prev: Option<Weak<RefCell<Self>>>,
     },
     Link {
         // TODO: Should these be Vec<Option<>>? It makes it a lot easier to know if we need to insert something new.
@@ -40,6 +40,64 @@ impl<K: Debug + Ord, V: Debug> Node<K, V> {
         }
     }
 }
+
+impl<K: Debug + Ord, V: Debug> Drop for Node<K, V> {
+    fn drop(&mut self) {
+        // need to set prev's <next> to our next and next's prev to our prev
+
+        match self {
+            Node::Leaf { prev, next, .. } => match (prev, next) {
+                (Some(p), Some(n)) => match (p.upgrade(), n.upgrade()) {
+                    (Some(p_upgrade), Some(n_upgrade)) => {
+                        let mut p_ref = p_upgrade.borrow_mut();
+                        let mut n_ref = n_upgrade.borrow_mut();
+
+                        match (&mut *p_ref, &mut *n_ref) {
+                            (Node::Leaf { next: p_next, .. }, Node::Leaf { prev: n_prev, .. }) => {
+                                *p_next = Some(n.clone());
+                                *n_prev = Some(p.clone());
+                            }
+                            (_, _) => {
+                                panic!("could not borrow both next and prev leafs")
+                            }
+                        }
+                    }
+                    _ => {
+                        println!("not able to upgrade weak link for: {:?}", self);
+                        panic!("failed to upgrade")
+                    }
+                },
+                (Some(p), None) => {
+                    // this is the case where we are the far right leaf
+                    if let Some(p_upgrade) = p.upgrade() {
+                        let mut p_ref = p_upgrade.borrow_mut();
+
+                        if let Node::Leaf { next: p_next, .. } = &mut *p_ref {
+                            *p_next = None;
+                        }
+                    }
+                }
+                (None, Some(n)) => {
+                    // this is the case where we are the far left leaf
+                    if let Some(n_upgrade) = n.upgrade() {
+                        let mut n_ref = n_upgrade.borrow_mut();
+
+                        if let Node::Leaf { prev: n_prev, .. } = &mut *n_ref {
+                            *n_prev = None;
+                        }
+                    }
+                }
+                (None, None) => {
+                    // this is the case where we're the only node, do nothing
+                    println!("self during drop: {:?}", self);
+                    // panic!("blah")
+                }
+            },
+            Node::Link { .. } => {}
+        }
+    }
+}
+
 impl<K: Debug + Ord, V: Debug> Display for Node<K, V> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.fmt_depth(f, 1)
@@ -50,8 +108,8 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
     pub(super) fn new_leaf() -> Self {
         Node::Leaf {
             key_vals: Vec::new(),
-            next: Weak::new(),
-            prev: Weak::new(),
+            next: None,
+            prev: None,
         }
     }
 
@@ -68,8 +126,8 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
         Rc::new(RefCell::new(Node::Leaf {
             key_vals: vec,
-            next: Weak::new(),
-            prev: Weak::new(),
+            next: None,
+            prev: None,
         }))
     }
 
@@ -158,11 +216,11 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
             let new_right_node = Rc::new(RefCell::new(Node::Leaf {
                 key_vals: new_keys_padded,
-                next: next.clone(),
-                prev: Rc::downgrade(rc_self),
+                next: next.take().map(|maybe_weak| maybe_weak.clone()),
+                prev: Some(Rc::downgrade(rc_self)),
             }));
 
-            *next = Rc::downgrade(&new_right_node);
+            *next = Some(Rc::downgrade(&new_right_node));
 
             (split_point, new_right_node)
         } else {
@@ -183,17 +241,21 @@ mod tests {
     use super::*;
     use std::ops::Deref;
 
-    fn create_leaf_with_kvs(items: Vec<i32>) -> Rc<RefCell<Node<i32, String>>> {
+    fn create_leaf_with_kvs(
+        items: Vec<i32>,
+        prev: Option<Weak<RefCell<Node<i32, String>>>>,
+        next: Option<Weak<RefCell<Node<i32, String>>>>,
+    ) -> Rc<RefCell<Node<i32, String>>> {
         Rc::new(RefCell::new(Node::Leaf {
             key_vals: items.iter().map(|k| (Rc::new(*k), k.to_string())).collect(),
-            next: Weak::new(),
-            prev: Weak::new(),
+            next,
+            prev,
         }))
     }
 
     #[test]
     fn test_split_leaf() {
-        let initial_node = create_leaf_with_kvs(vec![1, 2, 3, 4]);
+        let initial_node = create_leaf_with_kvs(vec![1, 2, 3, 4], None, None);
 
         let (left, split, right) = Node::split_leaf_node(&initial_node);
 
@@ -218,14 +280,27 @@ mod tests {
 
     #[test]
     fn test_split_link() {
-        let first = create_leaf_with_kvs(vec![1]);
-        let second = create_leaf_with_kvs(vec![2]);
-        let third = create_leaf_with_kvs(vec![3]);
-        let fourth = create_leaf_with_kvs(vec![4, 5]);
+        let first = create_leaf_with_kvs(vec![1], None, None);
+        let second = create_leaf_with_kvs(vec![2], Some(Rc::downgrade(&first)), None);
+        let third = create_leaf_with_kvs(vec![3], Some(Rc::downgrade(&second)), None);
+        let fourth = create_leaf_with_kvs(vec![4, 5], Some(Rc::downgrade(&third)), None);
+
+        let mut first_ref = first.borrow_mut();
+        if let Node::Leaf { next, .. } = &mut *first_ref {
+            *next = Some(Rc::downgrade(&second));
+        }
+        let mut second_ref = second.borrow_mut();
+        if let Node::Leaf { next, .. } = &mut *second_ref {
+            *next = Some(Rc::downgrade(&third));
+        }
+        let mut third_ref = third.borrow_mut();
+        if let Node::Leaf { next, .. } = &mut *third_ref {
+            *next = Some(Rc::downgrade(&fourth));
+        }
 
         let link_node = Rc::new(RefCell::new(Node::Link {
             separators: vec![Rc::new(2), Rc::new(3), Rc::new(4)],
-            children: vec![first, second, third, fourth],
+            children: vec![first.clone(), second.clone(), third.clone(), fourth.clone()],
         }));
 
         let mut link_ref = link_node.borrow_mut();
