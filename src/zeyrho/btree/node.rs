@@ -55,11 +55,11 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
         }
     }
 
-    pub(super) fn new_link() -> Self {
-        Node::Link {
+    pub(super) fn new_link() -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Node::Link {
             separators: Vec::new(),
             children: Vec::new(),
-        }
+        }))
     }
 
     pub(super) fn new_leaf_with_kv(key: Rc<K>, value: V) -> Rc<RefCell<Self>> {
@@ -104,7 +104,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
         {
             let mid = separators.len() / 2;
 
-            let new_right_link = Rc::new(RefCell::new(Node::<K, V>::new_link()));
+            let new_right_link = Node::<K, V>::new_link();
             let new_right_children = children.split_off(mid + 1);
 
             let new_right_separators = separators.split_off(mid + 1);
