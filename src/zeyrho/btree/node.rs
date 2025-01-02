@@ -1,14 +1,14 @@
 use std::cell::RefCell;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 #[derive(Debug, Clone)]
 pub enum Node<K: Ord + Debug, V: Debug> {
     Leaf {
         key_vals: Vec<(Rc<K>, V)>,
-        // next: Option<Rc<RefCell<Node<K, V>>>>,
-        // prev: Option<Rc<RefCell<Node<K, V>>>>,
+        next: Weak<RefCell<Self>>,
+        prev: Weak<RefCell<Self>>,
     },
     Link {
         // TODO: Should these be Vec<Option<>>? It makes it a lot easier to know if we need to insert something new.
@@ -50,8 +50,8 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
     pub(super) fn new_leaf() -> Self {
         Node::Leaf {
             key_vals: Vec::new(),
-            // next: None,
-            // prev: None,
+            next: Weak::new(),
+            prev: Weak::new(),
         }
     }
 
@@ -68,8 +68,8 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
         Rc::new(RefCell::new(Node::Leaf {
             key_vals: vec,
-            // next: None,
-            // prev: None,
+            next: Weak::new(),
+            prev: Weak::new(),
         }))
     }
 
@@ -140,8 +140,17 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
     }
 
     // returns the new separator and the new right node. Self will become the left node
-    pub(super) fn split_borrowed_leaf_node(&mut self) -> (Rc<K>, Rc<RefCell<Self>>) {
-        if let Node::Leaf { key_vals, .. } = self {
+    pub(super) fn split_borrowed_leaf_node(
+        &mut self,
+        rc_self: &Rc<RefCell<Self>>,
+    ) -> (Rc<K>, Rc<RefCell<Self>>) {
+        if let Node::Leaf {
+            key_vals,
+            next,
+            prev,
+            ..
+        } = self
+        {
             let mid = key_vals.len() / 2;
 
             let split_point = key_vals[mid].0.clone();
@@ -149,7 +158,11 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
             let new_right_node = Rc::new(RefCell::new(Node::Leaf {
                 key_vals: new_keys_padded,
+                next: next.clone(),
+                prev: Rc::downgrade(rc_self),
             }));
+
+            *next = Rc::downgrade(&new_right_node);
 
             (split_point, new_right_node)
         } else {
@@ -160,7 +173,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
     pub(super) fn split_leaf_node(
         link_to_self: &Rc<RefCell<Self>>,
     ) -> (Rc<RefCell<Self>>, Rc<K>, Rc<RefCell<Self>>) {
-        let (split, right) = (*link_to_self.borrow_mut()).split_borrowed_leaf_node();
+        let (split, right) = (*link_to_self.borrow_mut()).split_borrowed_leaf_node(link_to_self);
         (link_to_self.clone(), split, right)
     }
 }
@@ -173,6 +186,8 @@ mod tests {
     fn create_leaf_with_kvs(items: Vec<i32>) -> Rc<RefCell<Node<i32, String>>> {
         Rc::new(RefCell::new(Node::Leaf {
             key_vals: items.iter().map(|k| (Rc::new(*k), k.to_string())).collect(),
+            next: Weak::new(),
+            prev: Weak::new(),
         }))
     }
 

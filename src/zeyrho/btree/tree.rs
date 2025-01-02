@@ -75,7 +75,7 @@ impl<K: Ord + Debug, V: Debug> BPlusTree<K, V> {
                     return None;
                 }
 
-                let (split, new_right) = (*node_ref).split_borrowed_leaf_node();
+                let (split, new_right) = (*node_ref).split_borrowed_leaf_node(node);
 
                 Some((split, new_right))
             }
