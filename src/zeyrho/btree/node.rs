@@ -1,14 +1,14 @@
 use std::cell::RefCell;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 #[derive(Debug, Clone)]
 pub enum Node<K: Ord + Debug, V: Debug> {
     Leaf {
         key_vals: Vec<(Rc<K>, V)>,
-        // next: Option<Rc<RefCell<Node<K, V>>>>,
-        // prev: Option<Rc<RefCell<Node<K, V>>>>,
+        next: Option<Weak<RefCell<Self>>>,
+        prev: Option<Weak<RefCell<Self>>>,
     },
     Link {
         // TODO: Should these be Vec<Option<>>? It makes it a lot easier to know if we need to insert something new.
@@ -40,6 +40,65 @@ impl<K: Debug + Ord, V: Debug> Node<K, V> {
         }
     }
 }
+
+impl<K: Debug + Ord, V: Debug> Drop for Node<K, V> {
+    fn drop(&mut self) {
+        // need to set prev's <next> to our next and next's <prev> to our prev
+        match self {
+            Node::Leaf { prev, next, .. } => match (prev, next) {
+                (Some(p), Some(n)) => match (p.upgrade(), n.upgrade()) {
+                    (Some(p_upgrade), Some(n_upgrade)) => {
+                        let mut p_ref = p_upgrade.borrow_mut();
+                        let mut n_ref = n_upgrade.borrow_mut();
+
+                        match (&mut *p_ref, &mut *n_ref) {
+                            (Node::Leaf { next: p_next, .. }, Node::Leaf { prev: n_prev, .. }) => {
+                                *p_next = Some(n.clone());
+                                *n_prev = Some(p.clone());
+                            }
+                            (_, _) => {
+                                // this isn't a great place to panic, but I'm not sure what other option we have here.
+                                // we could have a background process checking for orphaned leaves or even fix them when we scan -- probably the latter
+                                panic!("could not borrow both next and prev leafs")
+                            }
+                        }
+                    }
+                    _ => {
+                        // also not great to do this :(
+                        // but this is all learning and toy code
+                        println!("not able to upgrade weak link for: {:?}", self);
+                        panic!("failed to upgrade")
+                    }
+                },
+                (Some(p), None) => {
+                    // this is the case where we are the far right leaf
+                    if let Some(p_upgrade) = p.upgrade() {
+                        let mut p_ref = p_upgrade.borrow_mut();
+
+                        if let Node::Leaf { next: p_next, .. } = &mut *p_ref {
+                            *p_next = None;
+                        }
+                    }
+                }
+                (None, Some(n)) => {
+                    // this is the case where we are the far left leaf
+                    if let Some(n_upgrade) = n.upgrade() {
+                        let mut n_ref = n_upgrade.borrow_mut();
+
+                        if let Node::Leaf { prev: n_prev, .. } = &mut *n_ref {
+                            *n_prev = None;
+                        }
+                    }
+                }
+                (None, None) => {
+                    // this is the case where we're the only node, do nothing
+                }
+            },
+            Node::Link { .. } => { /* we don't do anything special for link nodes right now*/ }
+        }
+    }
+}
+
 impl<K: Debug + Ord, V: Debug> Display for Node<K, V> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.fmt_depth(f, 1)
@@ -50,8 +109,8 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
     pub(super) fn new_leaf() -> Self {
         Node::Leaf {
             key_vals: Vec::new(),
-            // next: None,
-            // prev: None,
+            next: None,
+            prev: None,
         }
     }
 
@@ -68,8 +127,8 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
         Rc::new(RefCell::new(Node::Leaf {
             key_vals: vec,
-            // next: None,
-            // prev: None,
+            next: None,
+            prev: None,
         }))
     }
 
@@ -140,8 +199,17 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
     }
 
     // returns the new separator and the new right node. Self will become the left node
-    pub(super) fn split_borrowed_leaf_node(&mut self) -> (Rc<K>, Rc<RefCell<Self>>) {
-        if let Node::Leaf { key_vals, .. } = self {
+    pub(super) fn split_borrowed_leaf_node(
+        &mut self,
+        rc_self: &Rc<RefCell<Self>>,
+    ) -> (Rc<K>, Rc<RefCell<Self>>) {
+        if let Node::Leaf {
+            key_vals,
+            next,
+            prev,
+            ..
+        } = self
+        {
             let mid = key_vals.len() / 2;
 
             let split_point = key_vals[mid].0.clone();
@@ -149,7 +217,11 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
             let new_right_node = Rc::new(RefCell::new(Node::Leaf {
                 key_vals: new_keys_padded,
+                next: next.take().map(|maybe_weak| maybe_weak.clone()),
+                prev: Some(Rc::downgrade(rc_self)),
             }));
+
+            *next = Some(Rc::downgrade(&new_right_node));
 
             (split_point, new_right_node)
         } else {
@@ -160,7 +232,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
     pub(super) fn split_leaf_node(
         link_to_self: &Rc<RefCell<Self>>,
     ) -> (Rc<RefCell<Self>>, Rc<K>, Rc<RefCell<Self>>) {
-        let (split, right) = (*link_to_self.borrow_mut()).split_borrowed_leaf_node();
+        let (split, right) = (*link_to_self.borrow_mut()).split_borrowed_leaf_node(link_to_self);
         (link_to_self.clone(), split, right)
     }
 }
@@ -170,15 +242,21 @@ mod tests {
     use super::*;
     use std::ops::Deref;
 
-    fn create_leaf_with_kvs(items: Vec<i32>) -> Rc<RefCell<Node<i32, String>>> {
+    fn create_leaf_with_kvs(
+        items: Vec<i32>,
+        prev: Option<Weak<RefCell<Node<i32, String>>>>,
+        next: Option<Weak<RefCell<Node<i32, String>>>>,
+    ) -> Rc<RefCell<Node<i32, String>>> {
         Rc::new(RefCell::new(Node::Leaf {
             key_vals: items.iter().map(|k| (Rc::new(*k), k.to_string())).collect(),
+            next,
+            prev,
         }))
     }
 
     #[test]
     fn test_split_leaf() {
-        let initial_node = create_leaf_with_kvs(vec![1, 2, 3, 4]);
+        let initial_node = create_leaf_with_kvs(vec![1, 2, 3, 4], None, None);
 
         let (left, split, right) = Node::split_leaf_node(&initial_node);
 
@@ -201,16 +279,42 @@ mod tests {
         };
     }
 
+    fn assign_prev_next_in_order(leaves: Vec<Rc<RefCell<Node<i32, String>>>>) {
+        if leaves.len() < 2 {
+            return;
+        }
+        for rc_node_index in 1..leaves.len() {
+            let mut first = &leaves[rc_node_index - 1];
+            let mut second = &leaves[rc_node_index];
+            let mut first_ref = first.borrow_mut();
+            let mut second_ref = second.borrow_mut();
+
+            if let Node::Leaf { next, .. } = &mut *first_ref {
+                *next = Some(Rc::downgrade(&second));
+            }
+            if let Node::Leaf { prev, .. } = &mut *second_ref {
+                *prev = Some(Rc::downgrade(&first));
+            }
+        }
+    }
+
     #[test]
     fn test_split_link() {
-        let first = create_leaf_with_kvs(vec![1]);
-        let second = create_leaf_with_kvs(vec![2]);
-        let third = create_leaf_with_kvs(vec![3]);
-        let fourth = create_leaf_with_kvs(vec![4, 5]);
+        let first = create_leaf_with_kvs(vec![1], None, None);
+        let second = create_leaf_with_kvs(vec![2], None, None);
+        let third = create_leaf_with_kvs(vec![3], None, None);
+        let fourth = create_leaf_with_kvs(vec![4, 5], None, None);
+
+        assign_prev_next_in_order(vec![
+            first.clone(),
+            second.clone(),
+            third.clone(),
+            fourth.clone(),
+        ]);
 
         let link_node = Rc::new(RefCell::new(Node::Link {
             separators: vec![Rc::new(2), Rc::new(3), Rc::new(4)],
-            children: vec![first, second, third, fourth],
+            children: vec![first.clone(), second.clone(), third.clone(), fourth.clone()],
         }));
 
         let mut link_ref = link_node.borrow_mut();
@@ -228,13 +332,41 @@ mod tests {
                 assert_eq!(vec![&2], collected_seps);
 
                 let expected_children_keys = [vec![&1], vec![&2]];
+                let expected_next = [Some(second.clone()), Some(third.clone())];
+                let expected_prev = [None, Some(first.clone())];
                 for i in 0..children.len() {
-                    if let Node::Leaf { key_vals, .. } = children[i].borrow().deref() {
+                    if let Node::Leaf {
+                        key_vals,
+                        next,
+                        prev,
+                        ..
+                    } = children[i].borrow().deref()
+                    {
                         let collected_keys: Vec<&i32> = key_vals
                             .iter()
                             .map(|(k, _): &(Rc<i32>, String)| k.as_ref())
                             .collect();
                         assert_eq!(expected_children_keys[i], collected_keys);
+                        match (&expected_next[i], next) {
+                            (Some(expected), Some(actual)) => {
+                                assert!(Rc::ptr_eq(expected, &actual.upgrade().unwrap()));
+                            }
+                            (None, None) => {}
+                            (_, _) => {
+                                println!("got mismatching Some/None for expected next");
+                                assert!(false)
+                            }
+                        }
+                        match (&expected_prev[i], prev) {
+                            (Some(expected), Some(actual)) => {
+                                assert!(Rc::ptr_eq(expected, &actual.upgrade().unwrap()));
+                            }
+                            (None, None) => {}
+                            (_, _) => {
+                                println!("got mismatching Some/None for expected prev");
+                                assert!(false)
+                            }
+                        }
                     }
                 }
             };
@@ -248,13 +380,41 @@ mod tests {
                     separators.iter().map(|k: &Rc<i32>| k.as_ref()).collect();
                 assert_eq!(vec![&4], collected_seps);
                 let expected_children_keys = [vec![&3], vec![&4, &5]];
+                let expected_next = [Some(fourth.clone()), None];
+                let expected_prev = [Some(second.clone()), Some(third.clone())];
                 for i in 0..children.len() {
-                    if let Node::Leaf { key_vals, .. } = children[i].borrow().deref() {
+                    if let Node::Leaf {
+                        key_vals,
+                        next,
+                        prev,
+                        ..
+                    } = children[i].borrow().deref()
+                    {
                         let collected_keys: Vec<&i32> = key_vals
                             .iter()
                             .map(|(k, _): &(Rc<i32>, String)| k.as_ref())
                             .collect();
                         assert_eq!(expected_children_keys[i], collected_keys);
+                        match (&expected_next[i], next) {
+                            (Some(expected), Some(actual)) => {
+                                assert!(Rc::ptr_eq(expected, &actual.upgrade().unwrap()));
+                            }
+                            (None, None) => {}
+                            (_, _) => {
+                                println!("got mismatching Some/None for expected next");
+                                assert!(false)
+                            }
+                        }
+                        match (&expected_prev[i], prev) {
+                            (Some(expected), Some(actual)) => {
+                                assert!(Rc::ptr_eq(expected, &actual.upgrade().unwrap()));
+                            }
+                            (None, None) => {}
+                            (_, _) => {
+                                println!("got mismatching Some/None for expected prev");
+                                assert!(false)
+                            }
+                        }
                     }
                 }
             };
