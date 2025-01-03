@@ -43,8 +43,7 @@ impl<K: Debug + Ord, V: Debug> Node<K, V> {
 
 impl<K: Debug + Ord, V: Debug> Drop for Node<K, V> {
     fn drop(&mut self) {
-        // need to set prev's <next> to our next and next's prev to our prev
-
+        // need to set prev's <next> to our next and next's <prev> to our prev
         match self {
             Node::Leaf { prev, next, .. } => match (prev, next) {
                 (Some(p), Some(n)) => match (p.upgrade(), n.upgrade()) {
@@ -58,11 +57,15 @@ impl<K: Debug + Ord, V: Debug> Drop for Node<K, V> {
                                 *n_prev = Some(p.clone());
                             }
                             (_, _) => {
+                                // this isn't a great place to panic, but I'm not sure what other option we have here.
+                                // we could have a background process checking for orphaned leaves or even fix them when we scan -- probably the latter
                                 panic!("could not borrow both next and prev leafs")
                             }
                         }
                     }
                     _ => {
+                        // also not great to do this :(
+                        // but this is all learning and toy code
                         println!("not able to upgrade weak link for: {:?}", self);
                         panic!("failed to upgrade")
                     }
@@ -89,11 +92,9 @@ impl<K: Debug + Ord, V: Debug> Drop for Node<K, V> {
                 }
                 (None, None) => {
                     // this is the case where we're the only node, do nothing
-                    println!("self during drop: {:?}", self);
-                    // panic!("blah")
                 }
             },
-            Node::Link { .. } => {}
+            Node::Link { .. } => { /* we don't do anything special for link nodes right now*/ }
         }
     }
 }
