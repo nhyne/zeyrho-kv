@@ -1,3 +1,5 @@
+use crate::zeyrho::btree::tree::BPlusTree;
+use crate::zeyrho::btree::{DEGREE, MAX_KVS_IN_LEAF, SEPARATORS_MAX_SIZE};
 use std::cell::RefCell;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
@@ -234,6 +236,78 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
     ) -> (Rc<RefCell<Self>>, Rc<K>, Rc<RefCell<Self>>) {
         let (split, right) = (*link_to_self.borrow_mut()).split_borrowed_leaf_node(link_to_self);
         (link_to_self.clone(), split, right)
+    }
+
+    // the left Option is the new separator and the right is the new right node. We don't need to do anything with the left node b/c the parent is already pointing to it
+    pub(super) fn insert_internal(
+        node: &Rc<RefCell<Node<K, V>>>,
+        inserted_key: Rc<K>,
+        inserted_value: V,
+    ) -> Option<(Rc<K>, Rc<RefCell<Node<K, V>>>)> {
+        let mut node_ref = node.borrow_mut();
+        match &mut *node_ref {
+            Node::Leaf { key_vals, .. } => {
+                let pos = key_vals
+                    .iter()
+                    .position(|(k, _)| k.as_ref() > inserted_key.as_ref())
+                    .unwrap_or(key_vals.len());
+
+                key_vals.insert(pos, (inserted_key, inserted_value));
+
+                if key_vals.len() <= MAX_KVS_IN_LEAF {
+                    return None;
+                }
+
+                let (split, new_right) = (*node_ref).split_borrowed_leaf_node(node);
+
+                Some((split, new_right))
+            }
+            Node::Link {
+                separators,
+                children,
+            } => {
+                let mut child_to_update = separators
+                    .iter()
+                    .position(|k| k.as_ref() > inserted_key.as_ref());
+
+                // if we're inserting the biggest and the child location is empty then create new leaf and return current link
+                if child_to_update.is_none() {
+                    if separators.len() == SEPARATORS_MAX_SIZE {
+                        // here we must insert into the right most subtree
+                        if children.get(DEGREE - 1).is_none() {
+                            // no child is here, we need to make a new one
+                            let new_leaf = Node::new_leaf_with_kv(inserted_key, inserted_value);
+                            children.push(new_leaf);
+                            return None;
+                        }
+                    }
+                    child_to_update = Some(children.len() - 1);
+                }
+
+                let child = children[child_to_update.unwrap()].clone();
+
+                if let Some((new_separator, new_node)) =
+                    Node::insert_internal(&child, inserted_key, inserted_value)
+                // self.insert_internal(&child, inserted_key, inserted_value)
+                {
+                    Node::insert_separator_and_child_into_link(
+                        separators,
+                        children,
+                        new_separator,
+                        new_node,
+                    );
+                    if separators.len() <= SEPARATORS_MAX_SIZE {
+                        return None;
+                    }
+
+                    let (new_sep, new_right) = (*node_ref).split_borrowed_link_node();
+
+                    return Some((new_sep, new_right));
+                }
+
+                None
+            }
+        }
     }
 }
 
