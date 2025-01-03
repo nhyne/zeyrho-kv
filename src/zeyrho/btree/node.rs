@@ -278,25 +278,40 @@ mod tests {
         };
     }
 
+    fn assign_prev_next_in_order(leaves: Vec<Rc<RefCell<Node<i32, String>>>>) {
+        if leaves.len() < 2 {
+            return;
+        }
+        for rc_node_index in 1..leaves.len() {
+            if rc_node_index == leaves.len() - 1 {
+                let mut first = &leaves[rc_node_index - 1];
+                let mut second = &leaves[rc_node_index];
+                let mut first_ref = first.borrow_mut();
+                let mut second_ref = second.borrow_mut();
+
+                if let Node::Leaf { next, .. } = &mut *first_ref {
+                    *next = Some(Rc::downgrade(&second));
+                }
+                if let Node::Leaf { prev, .. } = &mut *second_ref {
+                    *prev = Some(Rc::downgrade(&first));
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_split_link() {
         let first = create_leaf_with_kvs(vec![1], None, None);
-        let second = create_leaf_with_kvs(vec![2], Some(Rc::downgrade(&first)), None);
-        let third = create_leaf_with_kvs(vec![3], Some(Rc::downgrade(&second)), None);
-        let fourth = create_leaf_with_kvs(vec![4, 5], Some(Rc::downgrade(&third)), None);
+        let second = create_leaf_with_kvs(vec![2], None, None);
+        let third = create_leaf_with_kvs(vec![3], None, None);
+        let fourth = create_leaf_with_kvs(vec![4, 5], None, None);
 
-        let mut first_ref = first.borrow_mut();
-        if let Node::Leaf { next, .. } = &mut *first_ref {
-            *next = Some(Rc::downgrade(&second));
-        }
-        let mut second_ref = second.borrow_mut();
-        if let Node::Leaf { next, .. } = &mut *second_ref {
-            *next = Some(Rc::downgrade(&third));
-        }
-        let mut third_ref = third.borrow_mut();
-        if let Node::Leaf { next, .. } = &mut *third_ref {
-            *next = Some(Rc::downgrade(&fourth));
-        }
+        assign_prev_next_in_order(vec![
+            first.clone(),
+            second.clone(),
+            third.clone(),
+            fourth.clone(),
+        ]);
 
         let link_node = Rc::new(RefCell::new(Node::Link {
             separators: vec![Rc::new(2), Rc::new(3), Rc::new(4)],
