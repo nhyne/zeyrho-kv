@@ -283,18 +283,16 @@ mod tests {
             return;
         }
         for rc_node_index in 1..leaves.len() {
-            if rc_node_index == leaves.len() - 1 {
-                let mut first = &leaves[rc_node_index - 1];
-                let mut second = &leaves[rc_node_index];
-                let mut first_ref = first.borrow_mut();
-                let mut second_ref = second.borrow_mut();
+            let mut first = &leaves[rc_node_index - 1];
+            let mut second = &leaves[rc_node_index];
+            let mut first_ref = first.borrow_mut();
+            let mut second_ref = second.borrow_mut();
 
-                if let Node::Leaf { next, .. } = &mut *first_ref {
-                    *next = Some(Rc::downgrade(&second));
-                }
-                if let Node::Leaf { prev, .. } = &mut *second_ref {
-                    *prev = Some(Rc::downgrade(&first));
-                }
+            if let Node::Leaf { next, .. } = &mut *first_ref {
+                *next = Some(Rc::downgrade(&second));
+            }
+            if let Node::Leaf { prev, .. } = &mut *second_ref {
+                *prev = Some(Rc::downgrade(&first));
             }
         }
     }
@@ -333,13 +331,41 @@ mod tests {
                 assert_eq!(vec![&2], collected_seps);
 
                 let expected_children_keys = [vec![&1], vec![&2]];
+                let expected_next = [Some(second.clone()), Some(third.clone())];
+                let expected_prev = [None, Some(first.clone())];
                 for i in 0..children.len() {
-                    if let Node::Leaf { key_vals, .. } = children[i].borrow().deref() {
+                    if let Node::Leaf {
+                        key_vals,
+                        next,
+                        prev,
+                        ..
+                    } = children[i].borrow().deref()
+                    {
                         let collected_keys: Vec<&i32> = key_vals
                             .iter()
                             .map(|(k, _): &(Rc<i32>, String)| k.as_ref())
                             .collect();
                         assert_eq!(expected_children_keys[i], collected_keys);
+                        match (&expected_next[i], next) {
+                            (Some(expected), Some(actual)) => {
+                                assert!(Rc::ptr_eq(expected, &actual.upgrade().unwrap()));
+                            }
+                            (None, None) => {}
+                            (_, _) => {
+                                println!("got mismatching Some/None for expected next");
+                                assert!(false)
+                            }
+                        }
+                        match (&expected_prev[i], prev) {
+                            (Some(expected), Some(actual)) => {
+                                assert!(Rc::ptr_eq(expected, &actual.upgrade().unwrap()));
+                            }
+                            (None, None) => {}
+                            (_, _) => {
+                                println!("got mismatching Some/None for expected prev");
+                                assert!(false)
+                            }
+                        }
                     }
                 }
             };
@@ -353,13 +379,41 @@ mod tests {
                     separators.iter().map(|k: &Rc<i32>| k.as_ref()).collect();
                 assert_eq!(vec![&4], collected_seps);
                 let expected_children_keys = [vec![&3], vec![&4, &5]];
+                let expected_next = [Some(fourth.clone()), None];
+                let expected_prev = [Some(second.clone()), Some(third.clone())];
                 for i in 0..children.len() {
-                    if let Node::Leaf { key_vals, .. } = children[i].borrow().deref() {
+                    if let Node::Leaf {
+                        key_vals,
+                        next,
+                        prev,
+                        ..
+                    } = children[i].borrow().deref()
+                    {
                         let collected_keys: Vec<&i32> = key_vals
                             .iter()
                             .map(|(k, _): &(Rc<i32>, String)| k.as_ref())
                             .collect();
                         assert_eq!(expected_children_keys[i], collected_keys);
+                        match (&expected_next[i], next) {
+                            (Some(expected), Some(actual)) => {
+                                assert!(Rc::ptr_eq(expected, &actual.upgrade().unwrap()));
+                            }
+                            (None, None) => {}
+                            (_, _) => {
+                                println!("got mismatching Some/None for expected next");
+                                assert!(false)
+                            }
+                        }
+                        match (&expected_prev[i], prev) {
+                            (Some(expected), Some(actual)) => {
+                                assert!(Rc::ptr_eq(expected, &actual.upgrade().unwrap()));
+                            }
+                            (None, None) => {}
+                            (_, _) => {
+                                println!("got mismatching Some/None for expected prev");
+                                assert!(false)
+                            }
+                        }
                     }
                 }
             };
