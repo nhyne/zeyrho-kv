@@ -45,21 +45,27 @@ impl<K: Ord + Debug, V: Debug> BPlusTree<K, V> {
         if let Some((new_separator, new_node)) =
             Node::insert_internal(&self.root.as_ref().unwrap().clone(), Rc::new(key), value)
         {
-            let new_root = Rc::new(RefCell::new(Node::Link {
-                separators: vec![new_separator],
-                children: vec![self.root.take().unwrap(), new_node],
-            }));
-
+            let new_root = Node::new_link_with_seps_and_children(vec![new_separator], vec![self.root.take().unwrap(), new_node]);
             self.root = Some(new_root)
         }
     }
 
-    pub fn delete(&mut self, key: K) -> Option<()> {
-        todo!()
-    }
+    pub fn delete(&mut self, key: K) -> Result<V, ()> {
+        if self.root.is_none() {
+            Err(())
+        } else {
+            let internal_deletion = Node::delete_internal(&self.root.as_ref().unwrap().clone(), key);
+            match internal_deletion {
+                Ok((k, v, node_deleted)) => {
+                    todo!()
+                }
+                Err(_) => {
+                    println!("nothing deleted");
+                    Err(())
 
-    fn delete_internal(&mut self, node: &Rc<RefCell<Node<K, V>>>, deleted_key: K) -> Option<()> {
-        todo!()
+                }
+            }
+        }
     }
 }
 

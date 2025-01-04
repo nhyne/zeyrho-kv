@@ -108,19 +108,26 @@ impl<K: Debug + Ord, V: Debug> Display for Node<K, V> {
 }
 
 impl<K: Ord + Debug, V: Debug> Node<K, V> {
+    pub(super) fn new_link() -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Node::Link {
+            separators: Vec::new(),
+            children: Vec::new(),
+        }))
+    }
+
+    pub(super) fn new_link_with_seps_and_children(separators: Vec<Rc<K>>, children: Vec<Rc<RefCell<Node<K, V>>>>) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Node::Link {
+            separators,
+            children,
+        }))
+    }
+
     pub(super) fn new_leaf() -> Self {
         Node::Leaf {
             key_vals: Vec::new(),
             next: None,
             prev: None,
         }
-    }
-
-    pub(super) fn new_link() -> Rc<RefCell<Self>> {
-        Rc::new(RefCell::new(Node::Link {
-            separators: Vec::new(),
-            children: Vec::new(),
-        }))
     }
 
     pub(super) fn new_leaf_with_kv(key: Rc<K>, value: V) -> Rc<RefCell<Self>> {
@@ -309,6 +316,60 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
             }
         }
     }
+
+
+    /* possible cases for this:
+        1. we delete a whole leaf node and need to delete the child from the parent link and do some propagation up...
+        2. we delete the current K value, which is an active separator in the parent, but retain the node
+        3. we delete the K, and it's not used anywhere
+        4. nothing was deleted
+
+        given these three options, what should we return? What does the parent Link node need to know about?
+        1. That the K and the Node was deleted
+        2. Just that the K was deleted
+        3. Nothing
+        4. Nothing? -- the user expects a different response though... so this is a different return then #3
+
+        Option<(Option<Self>, K)>
+        Result<(), (Option<Self>, K)>
+
+        Result<(), Option<(Option<Self>, K)>>
+
+        This is pretty gross, should I just wrap this in a deletion type?
+     */
+    pub(super) fn delete_internal(node: &Rc<RefCell<Node<K, V>>>, deleted_key: K) -> Result<(K, V, Option<()>), ()> {
+
+        // if link then see if any of the values make sense to continue searching -- I think this is always the case?
+
+        // if leaf then iterate through the K/Vs and delete if we get a match
+
+        let mut node_ref = node.borrow_mut();
+        match &mut *node_ref {
+            Node::Link { .. } => {
+
+                // if the K value is a separator then we're going to need to fix that....
+                // should this only happen if the child node has the value? -- Yes
+                todo!()
+            }
+            Node::Leaf { key_vals, .. } => {
+
+                let original_size = key_vals.len();
+                // let new_key_vals: Vec<(Rc<K>, V)> = key_vals.iter().filter(|(k, _) : &(Rc<K>, V)| *k.as_ref() != deleted_key).collect();
+                key_vals.retain(|(k, _)| *k.as_ref() != deleted_key);
+                let new_size = key_vals.len();
+
+                if original_size != new_size {
+                    println!("we removed an element");
+                }
+
+                if key_vals.is_empty() {
+                    // we need to delete this node
+                }
+            }
+        }
+
+        todo!()
+    }
 }
 
 #[cfg(test)]
@@ -318,19 +379,17 @@ mod tests {
 
     fn create_leaf_with_kvs(
         items: Vec<i32>,
-        prev: Option<Weak<RefCell<Node<i32, String>>>>,
-        next: Option<Weak<RefCell<Node<i32, String>>>>,
     ) -> Rc<RefCell<Node<i32, String>>> {
         Rc::new(RefCell::new(Node::Leaf {
             key_vals: items.iter().map(|k| (Rc::new(*k), k.to_string())).collect(),
-            next,
-            prev,
+            next: None,
+            prev: None,
         }))
     }
 
     #[test]
     fn test_split_leaf() {
-        let initial_node = create_leaf_with_kvs(vec![1, 2, 3, 4], None, None);
+        let initial_node = create_leaf_with_kvs(vec![1, 2, 3, 4]);
 
         let (left, split, right) = Node::split_leaf_node(&initial_node);
 
@@ -374,10 +433,10 @@ mod tests {
 
     #[test]
     fn test_split_link() {
-        let first = create_leaf_with_kvs(vec![1], None, None);
-        let second = create_leaf_with_kvs(vec![2], None, None);
-        let third = create_leaf_with_kvs(vec![3], None, None);
-        let fourth = create_leaf_with_kvs(vec![4, 5], None, None);
+        let first = create_leaf_with_kvs(vec![1]);
+        let second = create_leaf_with_kvs(vec![2]);
+        let third = create_leaf_with_kvs(vec![3]);
+        let fourth = create_leaf_with_kvs(vec![4, 5]);
 
         assign_prev_next_in_order(vec![
             first.clone(),
@@ -495,5 +554,15 @@ mod tests {
 
             assert_eq!(new_sep.as_ref(), &3);
         }
+    }
+
+
+    #[test]
+    fn test_delete_internal_from_leaf() {
+        let leaf = create_leaf_with_kvs(vec!(1, 2, 3));
+
+        let deletion = Node::delete_internal(&leaf, 2);
+
+        assert!(deletion.is_some());
     }
 }
