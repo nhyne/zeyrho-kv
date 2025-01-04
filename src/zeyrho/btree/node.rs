@@ -7,11 +7,20 @@ use std::rc::{Rc, Weak};
 
 #[derive(Debug, Clone)]
 pub enum Node<K: Ord + Debug, V: Debug> {
+    /*
+    TODO: It would be great to use prefix compression on leaf nodes' Keys. The problem is I'd need to make sure K is iterable and summable?
+    https://lobste.rs/s/za4cxl/b_trees_more_than_i_thought_i_d_want_know#c_d23bla
+    Essentially this would mean that for storing values 100, 101, 102 we would only keep 0, 1, 2 in the key_vals list then prepend the prefix if needed
+     */
     Leaf {
         key_vals: Vec<(Rc<K>, V)>,
         next: Option<Weak<RefCell<Self>>>,
         prev: Option<Weak<RefCell<Self>>>,
     },
+    /*
+    TODO: It would also be nice not to use a value between two child nodes' Keys as a separator, instead of a value directly.
+    i.e. if we're inserting 0, 10, 20, 30, 40, 50 then rather than having the separator be 30, we could make it 25, or even 3* (this is suffix compression)
+     */
     Link {
         // TODO: Should these be Vec<Option<>>? It makes it a lot easier to know if we need to insert something new.
         separators: Vec<Rc<K>>, // a link has DEGREE - 1 separators
@@ -337,7 +346,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
         This is pretty gross, should I just wrap this in a deletion type?
      */
-    pub(super) fn delete_internal(node: &Rc<RefCell<Node<K, V>>>, deleted_key: K) -> Result<(K, V, Option<()>), ()> {
+    pub(super) fn delete_internal(node: &Rc<RefCell<Node<K, V>>>, deleted_key: K) -> Option<()> {
 
         // if link then see if any of the values make sense to continue searching -- I think this is always the case?
 
@@ -348,6 +357,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
             Node::Link { .. } => {
 
                 // if the K value is a separator then we're going to need to fix that....
+                // if we end up deleting a value from a leaf then we need to children's biggest/smallest values
                 // should this only happen if the child node has the value? -- Yes
                 todo!()
             }
@@ -363,12 +373,12 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                 }
 
                 if key_vals.is_empty() {
-                    // we need to delete this node
+                    todo!()
+                } else {
+                    return Some(())
                 }
             }
         }
-
-        todo!()
     }
 }
 
@@ -564,5 +574,16 @@ mod tests {
         let deletion = Node::delete_internal(&leaf, 2);
 
         assert!(deletion.is_some());
+
+        if let Node::Leaf {key_vals, .. } = leaf.borrow().deref() {
+            let collected_keys: Vec<&i32> = key_vals
+                .iter()
+                .map(|(k, _): &(Rc<i32>, String)| k.as_ref())
+                .collect();
+
+            assert_eq!(vec![&1, &3], collected_keys);
+
+        };
+
     }
 }
