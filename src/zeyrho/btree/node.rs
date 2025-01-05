@@ -380,6 +380,34 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
             }
         }
     }
+
+    fn collect_leaf_kvs(&self) -> Vec<&K> {
+        if let Node::Leaf {key_vals, ..} = self {
+            let collected_keys: Vec<&K> = key_vals
+                .iter()
+                .map(|(k, _): &(Rc<K>, V)| k.as_ref())
+                .collect();
+
+            collected_keys
+        } else {
+            panic!("calling collect leaf kvs on link node")
+        }
+    }
+
+    // FIXME: These style of functions shouldn't panic if called on the wrong Node type
+    // Try to make the compiler not allow them to be called instead of having it be a runtime panic
+    fn collect_link_separators(&self) -> Vec<&K> {
+        if let Node::Link {separators, ..} = self {
+            let collected_separators: Vec<&K> = separators
+                .iter()
+                .map(|k: &Rc<K>| k.as_ref())
+                .collect();
+
+            collected_separators
+        } else {
+            panic!("calling collect link separators on leaf node")
+        }
+    }
 }
 
 #[cfg(test)]
@@ -403,22 +431,18 @@ mod tests {
 
         let (left, split, right) = Node::split_leaf_node(&initial_node);
 
-        if let Node::Leaf { key_vals, .. } = left.borrow().deref() {
-            let collected_seps: Vec<&i32> = key_vals
-                .iter()
-                .map(|(k, _): &(Rc<i32>, String)| k.as_ref())
-                .collect();
-            assert_eq!(collected_seps, vec![&1, &2])
+        let left_ref = left.borrow();
+        if let Node::Leaf { key_vals, .. } = left_ref.deref() {
+            let collected_key_vals = left_ref.collect_leaf_kvs();
+            assert_eq!(collected_key_vals, vec![&1, &2])
         };
 
         assert_eq!(split.as_ref(), &3);
 
-        if let Node::Leaf { key_vals, .. } = right.borrow().deref() {
-            let collected_seps: Vec<&i32> = key_vals
-                .iter()
-                .map(|(k, _): &(Rc<i32>, String)| k.as_ref())
-                .collect();
-            assert_eq!(collected_seps, vec![&3, &4])
+        let right_ref = right.borrow();
+        if let Node::Leaf { key_vals, .. } = right_ref.deref() {
+            let collected_key_vals = right_ref.collect_leaf_kvs();
+            assert_eq!(collected_key_vals, vec![&3, &4])
         };
     }
 
@@ -470,25 +494,21 @@ mod tests {
                 ..
             } = link_ref.deref()
             {
-                let collected_seps: Vec<&i32> =
-                    separators.iter().map(|k: &Rc<i32>| k.as_ref()).collect();
+                let collected_seps: Vec<&i32> = link_ref.collect_link_separators();
                 assert_eq!(vec![&2], collected_seps);
 
                 let expected_children_keys = [vec![&1], vec![&2]];
                 let expected_next = [Some(second.clone()), Some(third.clone())];
                 let expected_prev = [None, Some(first.clone())];
                 for i in 0..children.len() {
+                    let child_ref = children[i].borrow();
                     if let Node::Leaf {
-                        key_vals,
                         next,
                         prev,
                         ..
-                    } = children[i].borrow().deref()
+                    } = child_ref.deref()
                     {
-                        let collected_keys: Vec<&i32> = key_vals
-                            .iter()
-                            .map(|(k, _): &(Rc<i32>, String)| k.as_ref())
-                            .collect();
+                        let collected_keys = child_ref.collect_leaf_kvs();
                         assert_eq!(expected_children_keys[i], collected_keys);
                         match (&expected_next[i], next) {
                             (Some(expected), Some(actual)) => {
@@ -513,30 +533,28 @@ mod tests {
                     }
                 }
             };
+            let new_right_ref = new_right.borrow();
             if let Node::Link {
                 separators,
                 children,
                 ..
-            } = new_right.borrow().deref()
+            } = new_right_ref.deref()
             {
-                let collected_seps: Vec<&i32> =
-                    separators.iter().map(|k: &Rc<i32>| k.as_ref()).collect();
+                let collected_seps: Vec<&i32> = new_right_ref.collect_link_separators();
                 assert_eq!(vec![&4], collected_seps);
                 let expected_children_keys = [vec![&3], vec![&4, &5]];
                 let expected_next = [Some(fourth.clone()), None];
                 let expected_prev = [Some(second.clone()), Some(third.clone())];
                 for i in 0..children.len() {
+
+                    let child_ref = children[i].borrow();
                     if let Node::Leaf {
-                        key_vals,
                         next,
                         prev,
                         ..
-                    } = children[i].borrow().deref()
+                    } = child_ref.deref()
                     {
-                        let collected_keys: Vec<&i32> = key_vals
-                            .iter()
-                            .map(|(k, _): &(Rc<i32>, String)| k.as_ref())
-                            .collect();
+                        let collected_keys = child_ref.collect_leaf_kvs();
                         assert_eq!(expected_children_keys[i], collected_keys);
                         match (&expected_next[i], next) {
                             (Some(expected), Some(actual)) => {
@@ -575,15 +593,42 @@ mod tests {
 
         assert!(deletion.is_some());
 
-        if let Node::Leaf {key_vals, .. } = leaf.borrow().deref() {
-            let collected_keys: Vec<&i32> = key_vals
-                .iter()
-                .map(|(k, _): &(Rc<i32>, String)| k.as_ref())
-                .collect();
+        let leaf_ref = leaf.borrow();
+
+        if let Node::Leaf {key_vals, .. } = leaf_ref.deref() {
+            let collected_keys = leaf_ref.collect_leaf_kvs();
 
             assert_eq!(vec![&1, &3], collected_keys);
+        };
+    }
+
+    #[test]
+    fn test_delete_internal_from_link_without_merge() {
+        let left_leaf = create_leaf_with_kvs(vec!(1, 2, 3));
+        let right_leaf = create_leaf_with_kvs(vec!(4, 5, 6));
+
+        assign_prev_next_in_order(vec!(left_leaf.clone(), right_leaf.clone()));
+
+        let link_node = Rc::new(RefCell::new(Node::Link {
+            separators: vec![Rc::new(4)],
+            children: vec![left_leaf.clone(), right_leaf.clone()],
+        }));
+
+
+        Node::delete_internal(&link_node, 3);
+
+        let expected_children_kvs = vec![vec![&1, &2], vec![&4, &5, &6]];
+        let link_ref = link_node.borrow();
+        if let Node::Link {separators, children} = link_ref.deref() {
+            assert_eq!(vec![&4], link_ref.collect_link_separators());
+
+            for child_index in 0..(children.len()) {
+                let child_ref = children[child_index].borrow();
+                if let Node::Leaf { .. } = child_ref.deref() {
+                    assert_eq!(expected_children_kvs[child_index], child_ref.collect_leaf_kvs());
+                }
+            }
 
         };
-
     }
 }
