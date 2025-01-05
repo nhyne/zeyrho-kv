@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
 use std::rc::{Rc, Weak};
+use prost::encoding::key_len;
 
 #[derive(Debug, Clone)]
 pub enum Node<K: Ord + Debug, V: Debug> {
@@ -136,6 +137,17 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
             key_vals: Vec::new(),
             next: None,
             prev: None,
+        }
+    }
+
+    pub(super) fn is_empty(&self) -> bool {
+        match self {
+            Node::Leaf { key_vals , .. } => {
+                key_vals.is_empty()
+            }
+            Node::Link { children, .. } => {
+                children.is_empty()
+            }
         }
     }
 
@@ -354,11 +366,37 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
         let mut node_ref = node.borrow_mut();
         match &mut *node_ref {
-            Node::Link { .. } => {
+            Node::Link { separators, children } => {
 
                 // if the K value is a separator then we're going to need to fix that....
                 // if we end up deleting a value from a leaf then we need to children's biggest/smallest values
                 // should this only happen if the child node has the value? -- Yes
+
+                // find the child to look at
+                let child_to_delete_from_pos = separators.iter().position(|s| deleted_key < *s.as_ref()).unwrap_or(children.len() - 1);
+
+                let child_node = &children[child_to_delete_from_pos];
+                let deleted_result = Self::delete_internal(child_node, deleted_key);
+
+                match deleted_result {
+                    None => {
+                        println!("nothing to report, move along");
+                    }
+                    Some(_) => {
+                        println!("we deleted something and now need to do something about the deletion....");
+                        println!("how do we know if a leaf is empty though?");
+
+                        if child_node.borrow().is_empty() {
+                            println!("need to handle child node being empty");
+                            panic!("child is now empty")
+                        }
+
+                        return None
+                    }
+                }
+
+
+
                 todo!()
             }
             Node::Leaf { key_vals, .. } => {
