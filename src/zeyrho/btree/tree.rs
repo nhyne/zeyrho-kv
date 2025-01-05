@@ -86,10 +86,10 @@ mod tests {
         }
         let root = tree.root.as_ref().unwrap().borrow();
 
-        if let Node::Leaf { key_vals, .. } = &*root {
-            assert_eq!(key_vals.len(), CHILDREN_MAX_SIZE);
+        if let Node::Leaf { internal_leaf, .. } = &*root {
+            assert_eq!(internal_leaf.len(), CHILDREN_MAX_SIZE);
             let mut i = 0;
-            key_vals.iter().for_each(|(x, _)| {
+            internal_leaf.iter().for_each(|(x, _)| {
                 assert_eq!(x.as_ref(), &i);
                 i += 1;
             })
@@ -106,24 +106,23 @@ mod tests {
         }
         let root = tree.root.as_ref().unwrap().borrow();
         if let Node::Link {
-            separators,
-            children,
+            internal_link,
         } = &*root
         {
-            assert_eq!(separators.len(), 1);
-            assert!(!separators.is_empty());
-            assert_eq!(separators.first().unwrap().as_ref(), &1);
-            assert_eq!(children.len(), 2);
+            assert_eq!(internal_link.separators.len(), 1);
+            assert!(!internal_link.separators.is_empty());
+            assert_eq!(internal_link.separators.first().unwrap().as_ref(), &1);
+            assert_eq!(internal_link.children.len(), 2);
 
             let mut separator_index = 0;
-            children.iter().for_each(|child| {
-                if let Node::Leaf { key_vals, .. } = &*child.borrow() {
-                    key_vals
+            internal_link.children.iter().for_each(|child| {
+                if let Node::Leaf { internal_leaf, .. } = &*child.borrow() {
+                    internal_leaf
                         .iter()
                         .for_each(|(key, value): &(Rc<i32>, String)| {
-                            match separators.get(separator_index) {
+                            match internal_link.separators.get(separator_index) {
                                 None => {
-                                    assert!(separators.last().unwrap().as_ref() <= key.as_ref());
+                                    assert!(internal_link.separators.last().unwrap().as_ref() <= key.as_ref());
                                 }
                                 Some(separator_val) => {
                                     assert!(separator_val.as_ref() > key.as_ref());
@@ -148,19 +147,18 @@ mod tests {
 
         let root = tree.root.as_ref().unwrap().borrow();
         if let Node::Link {
-            separators,
-            children,
+            internal_link,
         } = &*root
         {
-            assert_eq!(separators.len(), 1);
+            assert_eq!(internal_link.separators.len(), 1);
 
             let mut separator_index = 0;
-            children.iter().for_each(|child| {
-                if let Node::Leaf { key_vals, .. } = &*child.borrow() {
-                    key_vals
+            internal_link.children.iter().for_each(|child| {
+                if let Node::Leaf { internal_leaf, .. } = &*child.borrow() {
+                    internal_leaf
                         .iter()
                         .for_each(|(key, value): &(Rc<i32>, String)| {
-                            assert!(separators[separator_index].as_ref() >= key.as_ref());
+                            assert!(internal_link.separators[separator_index].as_ref() >= key.as_ref());
                             assert_eq!(&key.as_ref().to_string(), value);
                         })
                 }
@@ -185,26 +183,23 @@ mod tests {
         let expected_children = [vec![&0], vec![&2], vec![&4], vec![&6, &8], vec![&10, &12]];
 
         if let Node::Link {
-            separators,
-            children,
+            internal_link,
         } = tree.root.unwrap().borrow().deref()
         {
-            assert_eq!(separators.len(), 1);
+            assert_eq!(internal_link.separators.len(), 1);
 
-            children.iter().for_each(|child| {
+            internal_link.children.iter().for_each(|child| {
                 if let Node::Link {
-                    separators,
-                    children,
-                    ..
+                    internal_link,
                 } = &*child.borrow()
                 {
-                    let collected: Vec<&i32> = separators.iter().map(|s| s.as_ref()).collect();
+                    let collected: Vec<&i32> = internal_link.separators.iter().map(|s| s.as_ref()).collect();
                     assert_eq!(expected_separators[separator_index], collected);
                     separator_index += 1;
 
-                    for child in children.iter() {
-                        if let Node::Leaf { key_vals, .. } = child.borrow().deref() {
-                            let collected: Vec<&i32> = key_vals
+                    for child in internal_link.children.iter() {
+                        if let Node::Leaf { internal_leaf, .. } = child.borrow().deref() {
+                            let collected: Vec<&i32> = internal_leaf
                                 .iter()
                                 .map(|(k, _): &(Rc<i32>, String)| k.as_ref())
                                 .collect();
@@ -239,26 +234,23 @@ mod tests {
         ];
 
         if let Node::Link {
-            separators,
-            children,
+            internal_link
         } = tree.root.unwrap().borrow().deref()
         {
-            assert_eq!(separators.len(), 1);
+            assert_eq!(internal_link.separators.len(), 1);
 
-            children.iter().for_each(|child| {
+            internal_link.children.iter().for_each(|child| {
                 if let Node::Link {
-                    separators,
-                    children,
-                    ..
+                    internal_link
                 } = &*child.borrow()
                 {
-                    let collected: Vec<&i32> = separators.iter().map(|s| s.as_ref()).collect();
+                    let collected: Vec<&i32> = internal_link.separators.iter().map(|s| s.as_ref()).collect();
                     assert_eq!(expected_separators[separator_index], collected);
                     separator_index += 1;
 
-                    for child in children.iter() {
-                        if let Node::Leaf { key_vals, .. } = child.borrow().deref() {
-                            let collected: Vec<&i32> = key_vals
+                    for child in internal_link.children.iter() {
+                        if let Node::Leaf { internal_leaf, .. } = child.borrow().deref() {
+                            let collected: Vec<&i32> = internal_leaf
                                 .iter()
                                 .map(|(k, _): &(Rc<i32>, String)| k.as_ref())
                                 .collect();
