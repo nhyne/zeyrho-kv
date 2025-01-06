@@ -284,18 +284,6 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
     }
 
 
-    // // splitting a link node with separators 1, 2, 3, should result in a new link node with a single separator of 2 and child link nodes of 1, 3
-    // pub(super) fn split_link_node(
-    //     self_rc: &Rc<RefCell<Self>>,
-    // ) -> (Rc<RefCell<Self>>, Rc<K>, Rc<RefCell<Self>>) {
-    //     let (sep, new_right) = (*self_rc.borrow_mut()).split_borrowed_link_node();
-    //
-    //     if let Node::Link { internal_link, .. } = new_right.borrow().deref() {
-    //         return (internal_link.children[0].clone(), sep, new_right.clone());
-    //     }
-    //     panic!("should not fail")
-    // }
-
     pub(super) fn split_leaf_node(
         link_to_self: &Rc<RefCell<Self>>,
     ) -> Option<(Rc<RefCell<Self>>, Rc<K>, Rc<RefCell<Self>>)> {
