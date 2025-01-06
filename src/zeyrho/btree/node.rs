@@ -1,7 +1,6 @@
 use crate::zeyrho::btree::{DEGREE, MAX_KVS_IN_LEAF, SEPARATORS_MAX_SIZE};
 use std::cell::RefCell;
 use std::fmt::{Debug, Display, Formatter};
-use std::ops::Deref;
 use std::rc::{Rc, Weak};
 
 #[derive(Debug)]
@@ -97,7 +96,7 @@ impl<K: Debug + Ord, V: Debug> InternalLeaf<K, V> {
                 internal_leaf: InternalLeaf {
 
                 key_vals: new_keys_padded,
-                next: self.next.take().map(|maybe_weak| maybe_weak.clone()),
+                next: self.next.take(),
                 prev: Some(Rc::downgrade(rc_self)),
                 }
             }));
@@ -445,7 +444,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                 if internal_leaf.key_vals.is_empty() {
                     todo!()
                 } else {
-                    return Some(())
+                    Some(())
                 }
             }
         }
