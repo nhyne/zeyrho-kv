@@ -347,7 +347,6 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
                 if let Some((new_separator, new_node)) =
                     Node::insert_internal(&child, inserted_key, inserted_value)
-                // self.insert_internal(&child, inserted_key, inserted_value)
                 {
                     Node::insert_separator_and_child_into_link(
                         &mut internal_link.separators,
