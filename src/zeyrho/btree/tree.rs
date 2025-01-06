@@ -69,7 +69,7 @@ TODO: Would be nice if the tests weren't based on DEGREE = 3
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::zeyrho::btree::DEGREE;
+    use crate::zeyrho::btree::{DEGREE, MAX_KVS_IN_LEAF};
     use std::ops::Deref;
 
     fn create_tree() -> BPlusTree<i32, String> {
@@ -80,13 +80,13 @@ mod tests {
     fn test_single_leaf_node() {
         let mut tree = create_tree();
 
-        for i in 0..CHILDREN_MAX_SIZE {
+        for i in 0..MAX_KVS_IN_LEAF {
             tree.insert(i as i32, i.to_string());
         }
         let root = tree.root.as_ref().unwrap().borrow();
 
         if let Node::Leaf { internal_leaf, .. } = &*root {
-            assert_eq!(internal_leaf.len(), CHILDREN_MAX_SIZE);
+            assert_eq!(internal_leaf.len(), MAX_KVS_IN_LEAF);
             let mut i = 0;
             internal_leaf.iter().for_each(|(x, _)| {
                 assert_eq!(x.as_ref(), &i);
