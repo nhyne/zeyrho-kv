@@ -1,10 +1,8 @@
-use crate::zeyrho::btree::tree::BPlusTree;
 use crate::zeyrho::btree::{DEGREE, MAX_KVS_IN_LEAF, SEPARATORS_MAX_SIZE};
 use std::cell::RefCell;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
 use std::rc::{Rc, Weak};
-use prost::encoding::key_len;
 
 #[derive(Debug)]
 pub enum Node<K: Ord + Debug, V: Debug> {
@@ -688,5 +686,12 @@ mod tests {
     fn test_delete_empty_child_node() {
         let leaf_node = create_leaf_with_kvs(vec![1]);
         assert!(true)
+    }
+
+    #[test]
+    fn test_sizes_stay_the_same() {
+        assert_eq!(size_of::<Node<i32, String>>(), 48);
+        assert_eq!(size_of::<InternalLink<i32, String>>(), 48);
+        assert_eq!(size_of::<InternalLeaf<i32, String>>(), 40);
     }
 }
