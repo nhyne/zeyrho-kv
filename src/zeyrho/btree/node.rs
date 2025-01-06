@@ -430,9 +430,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                 }
             }
             Node::Leaf { internal_leaf, .. } => {
-
                 let original_size = internal_leaf.key_vals.len();
-                // let new_key_vals: Vec<(Rc<K>, V)> = key_vals.iter().filter(|(k, _) : &(Rc<K>, V)| *k.as_ref() != deleted_key).collect();
                 internal_leaf.key_vals.retain(|(k, _)| *k.as_ref() != deleted_key);
                 let new_size = internal_leaf.key_vals.len();
 
@@ -670,8 +668,23 @@ mod tests {
 
     #[test]
     fn test_delete_empty_child_node() {
-        let leaf_node = create_leaf_with_kvs(vec![1]);
-        assert!(true)
+        let left_node = create_leaf_with_kvs(vec![1]);
+        let right_node = create_leaf_with_kvs(vec![2, 3]);
+
+        assign_prev_next_in_order(vec![left_node.clone(), right_node.clone()]);
+
+        let link_node = Rc::new(RefCell::new(Node::Link { internal_link: InternalLink{
+            separators: vec![Rc::new(2)],
+            children: vec![left_node.clone(), right_node.clone()],
+        }}));
+
+        let deletion_result = Node::delete_internal(&link_node, 1);
+
+        if let Node::Link {internal_link} = link_node.borrow().deref() {
+
+            assert_eq!(&3, internal_link.separators.first().unwrap().as_ref());
+        };
+
     }
 
     #[test]
