@@ -1,4 +1,4 @@
-use crate::zeyrho::btree::node::Node;
+use crate::zeyrho::btree::node::{DeletionResult, Node};
 use std::cell::RefCell;
 use std::fmt::{Debug, Display, Formatter};
 use std::rc::Rc;
@@ -55,8 +55,15 @@ impl<K: Ord + Debug, V: Debug> BPlusTree<K, V> {
         } else {
             let internal_deletion = Node::delete_internal(&self.root.as_ref().unwrap().clone(), key);
             match internal_deletion {
-                Some(_) => {todo!()}
-                None => {todo!()}
+                DeletionResult::EmptiedNode { .. } => {
+                    todo!()
+                }
+                DeletionResult::NothingDeleted() => {
+                    todo!()
+                }
+                DeletionResult::DeletedNoAction() => {
+                    todo!()
+                }
             }
         }
     }

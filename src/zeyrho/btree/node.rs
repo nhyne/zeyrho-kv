@@ -205,6 +205,13 @@ impl<K: Debug + Ord, V: Debug> Display for Node<K, V> {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub(super) enum DeletionResult {
+    EmptiedNode(),
+    NothingDeleted(),
+    DeletedNoAction(),
+}
+
 impl<K: Ord + Debug, V: Debug> Node<K, V> {
     pub(super) fn new_link() -> Rc<RefCell<Self>> {
         Rc::new(RefCell::new(Node::Link {
@@ -388,45 +395,47 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
         This is pretty gross, should I just wrap this in a deletion type?
      */
-    pub(super) fn delete_internal(node: &Rc<RefCell<Node<K, V>>>, deleted_key: K) -> Option<()> {
-
+    pub(super) fn delete_internal(node: &Rc<RefCell<Node<K, V>>>, deleted_key: K) -> DeletionResult {
         // if link then see if any of the values make sense to continue searching -- I think this is always the case?
-
         // if leaf then iterate through the K/Vs and delete if we get a match
-
         let mut node_ref = node.borrow_mut();
         match &mut *node_ref {
             Node::Link { internal_link } => {
-
                 // if the K value is a separator then we're going to need to fix that....
                 // if we end up deleting a value from a leaf then we need to children's biggest/smallest values
                 // should this only happen if the child node has the value? -- Yes
 
                 // find the child to look at
                 let child_to_delete_from_pos = internal_link.separators.iter().position(|s| deleted_key < *s.as_ref()).unwrap_or(internal_link.children.len() - 1);
-
                 let child_node = &internal_link.children[child_to_delete_from_pos];
                 let deleted_result = Self::delete_internal(child_node, deleted_key);
-
                 match deleted_result {
-                    None => {
-                        println!("nothing to report, move along");
-                        None
+
+                    DeletionResult::EmptiedNode { .. } => {
+                        // the link here needs to do some sort of node merging or splitting
+                        todo!()
                     }
-                    Some(_) => {
-                        println!("we deleted something and now need to do something about the deletion....");
-                        println!("how do we know if a leaf is empty though?");
-
-                        if child_node.borrow().is_empty() {
-                            println!("need to handle child node being empty");
-                            panic!("child is now empty, must merge");
-                            todo!()
-                        } else {
-
-                            None
-                        }
-
+                    result => {
+                        result
                     }
+                    //None => {
+                    //    println!("nothing to report, move along");
+                    //    None
+                    //}
+                    //Some(_) => {
+                    //    println!("we deleted something and now need to do something about the deletion....");
+                    //    println!("how do we know if a leaf is empty though?");
+
+                    //    if child_node.borrow().is_empty() {
+                    //        println!("need to handle child node being empty");
+                    //        panic!("child is now empty, must merge");
+                    //        todo!()
+                    //    } else {
+
+                    //
+                    //    }
+
+                    //}
                 }
             }
             Node::Leaf { internal_leaf, .. } => {
@@ -434,14 +443,15 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                 internal_leaf.key_vals.retain(|(k, _)| *k.as_ref() != deleted_key);
                 let new_size = internal_leaf.key_vals.len();
 
-                if original_size != new_size {
-                    println!("we removed an element");
-                }
 
                 if internal_leaf.key_vals.is_empty() {
-                    todo!()
+                    return DeletionResult::EmptiedNode{};
                 } else {
-                    Some(())
+                    if original_size != new_size {
+                        println!("we removed an element");
+                        return DeletionResult::DeletedNoAction{};
+                    }
+                    return DeletionResult::NothingDeleted{};
                 }
             }
         }
@@ -623,7 +633,7 @@ mod tests {
 
         let deletion = Node::delete_internal(&leaf, 2);
 
-        assert!(deletion.is_some());
+        assert_eq!(deletion, DeletionResult::DeletedNoAction());
 
         let leaf_ref = leaf.borrow();
 
