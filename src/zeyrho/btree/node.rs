@@ -1,6 +1,7 @@
-use crate::zeyrho::btree::{DEGREE, MAX_KVS_IN_LEAF, SEPARATORS_MAX_SIZE};
+use crate::zeyrho::btree::{DEGREE, MAX_KVS_IN_LEAF, SEPARATORS_MAX_SIZE, MIN_ELEMENTS_IN_LEAF, MIN_ELEMENTS_IN_LEAF_MINUS_ONE};
 use std::cell::RefCell;
 use std::fmt::{Debug, Display, Formatter};
+use std::ops::Deref;
 use std::rc::{Rc, Weak};
 
 #[derive(Debug)]
@@ -206,10 +207,12 @@ impl<K: Debug + Ord, V: Debug> Display for Node<K, V> {
 }
 
 #[derive(Debug, PartialEq)]
-pub(super) enum DeletionResult {
+pub(super) enum DeletionResult<K: Ord + Debug> {
     EmptiedNode(),
     NothingDeleted(),
-    DeletedNoAction(),
+    Deleted{
+        bubbled_separator: Rc<K>
+    },
 }
 
 impl<K: Ord + Debug, V: Debug> Node<K, V> {
@@ -395,7 +398,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
         This is pretty gross, should I just wrap this in a deletion type?
      */
-    pub(super) fn delete_internal(node: &Rc<RefCell<Node<K, V>>>, deleted_key: K) -> DeletionResult {
+    pub(super) fn delete_internal(node: &Rc<RefCell<Node<K, V>>>, deleted_key: K) -> DeletionResult<V> {
         // if link then see if any of the values make sense to continue searching -- I think this is always the case?
         // if leaf then iterate through the K/Vs and delete if we get a match
         let mut node_ref = node.borrow_mut();
@@ -411,8 +414,34 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                 let deleted_result = Self::delete_internal(child_node, deleted_key);
                 match deleted_result {
 
-                    DeletionResult::EmptiedNode { .. } => {
+                    DeletionResult::EmptiedNode{} => {
                         // the link here needs to do some sort of node merging or splitting
+
+                        // options for merging:
+                        // next door node has some values we can steal (this should work in any direction)
+
+                        // let's do one of two things
+                        /*
+                            if we're working with leaf nodes (the child is a leaf) then let's try to grab some values from other leaves
+                                - apparently we're supposed to keep a certain number of elements in each node based on the depth / degree
+                                - for a first pass let's skip that and then come back to it after the fact
+                         */
+
+                        let child_ref = child_node.borrow_mut();
+                        match &mut *child_ref {
+                            Node::Leaf { .. }  => {
+                                /*
+                                by this point the child node has not been dropped so we have access to both the neighbors
+                                lets try to steal some of their values -- problem is we only want to steal from one side (whichever has more)
+                                the node we should pick to steal from should be based on the direction of the K value compared to separators
+                                i.e. if we have seps [1, 4, 8] and delete value 5, it shouldn't matter because we haven't done anything with the separator value K
+                                we but if we delete 4 then we have to pull from the right?
+                                something seems off about this....
+                                 */
+                            }
+                            Node::Link { .. } => {}
+                        }
+
                         todo!()
                     }
                     result => {
@@ -444,12 +473,24 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                 let new_size = internal_leaf.key_vals.len();
 
 
+                match internal_leaf.key_vals.len() {
+                    0 => {}
+                    MIN_ELEMENTS_IN_LEAF_MINUS_ONE => {
+
+                        println!("we need to rebalance here");
+                    }
+                    _ => {}
+                }
+
                 if internal_leaf.key_vals.is_empty() {
                     return DeletionResult::EmptiedNode{};
                 } else {
                     if original_size != new_size {
                         println!("we removed an element");
-                        return DeletionResult::DeletedNoAction{};
+                        return DeletionResult::Deleted{
+                            bubbled_separator: todo!()
+
+                        };
                     }
                     return DeletionResult::NothingDeleted{};
                 }
