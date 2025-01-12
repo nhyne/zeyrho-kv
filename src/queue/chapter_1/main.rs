@@ -12,6 +12,11 @@ use zeyrho::zeyrho::queue::{
     DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, ReplicateDataRequest,
     ReplicateDataResponse, SizeRequest, SizeResponse,
 };
+use opentelemetry::{
+    global,
+    trace::{Tracer, TracerProvider as _},
+};
+use opentelemetry_sdk::trace::TracerProvider;
 
 mod proto {
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
@@ -21,6 +26,18 @@ mod proto {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let address = "127.0.0.1:8080".parse().unwrap();
+
+    let provider = TracerProvider::builder()
+        .with_simple_exporter(opentelemetry_stdout::SpanExporter::default())
+        .build();
+    let tracer = provider.tracer("readme_example");
+
+    tracer.in_span("doing_work", |cx| {
+        println!("anything in here");
+    });
+
+    // Shutdown trace pipeline
+    // provider.shutdown().expect("TracerProvider should shutdown successfully");
 
     let service = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)
