@@ -213,6 +213,7 @@ pub(super) enum DeletionResult<K: Ord + Debug> {
     Deleted{
         bubbled_separator: Rc<K>
     },
+    RemovedFromLeafNoBubble(),
 }
 
 impl<K: Ord + Debug, V: Debug> Node<K, V> {
@@ -398,7 +399,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
         This is pretty gross, should I just wrap this in a deletion type?
      */
-    pub(super) fn delete_internal(node: &Rc<RefCell<Node<K, V>>>, deleted_key: K) -> DeletionResult<V> {
+    pub(super) fn delete_internal(node: &Rc<RefCell<Node<K, V>>>, deleted_key: K) -> DeletionResult<K> {
         // if link then see if any of the values make sense to continue searching -- I think this is always the case?
         // if leaf then iterate through the K/Vs and delete if we get a match
         let mut node_ref = node.borrow_mut();
@@ -427,7 +428,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                                 - for a first pass let's skip that and then come back to it after the fact
                          */
 
-                        let child_ref = child_node.borrow_mut();
+                        let mut child_ref = child_node.borrow_mut();
                         match &mut *child_ref {
                             Node::Leaf { .. }  => {
                                 /*
@@ -473,26 +474,21 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                 let new_size = internal_leaf.key_vals.len();
 
 
-                match internal_leaf.key_vals.len() {
-                    0 => {}
+                match internal_leaf.key_vals.len() as i32 {
+                    0 => {
+                        DeletionResult::EmptiedNode()
+                    }
                     MIN_ELEMENTS_IN_LEAF_MINUS_ONE => {
-
                         println!("we need to rebalance here");
+                        todo!()
                     }
-                    _ => {}
-                }
-
-                if internal_leaf.key_vals.is_empty() {
-                    return DeletionResult::EmptiedNode{};
-                } else {
-                    if original_size != new_size {
-                        println!("we removed an element");
-                        return DeletionResult::Deleted{
-                            bubbled_separator: todo!()
-
-                        };
+                    _ => {
+                        if original_size != new_size {
+                            println!("we removed an element");
+                            return DeletionResult::RemovedFromLeafNoBubble()
+                        }
+                        DeletionResult::NothingDeleted()
                     }
-                    return DeletionResult::NothingDeleted{};
                 }
             }
         }
@@ -670,20 +666,62 @@ mod tests {
 
     #[test]
     fn test_delete_internal_from_leaf() {
-        let leaf = create_leaf_with_kvs(vec!(1, 2, 3));
+        let leaf = create_leaf_with_kvs(vec!(1, 2));
 
         let deletion = Node::delete_internal(&leaf, 2);
 
-        assert_eq!(deletion, DeletionResult::DeletedNoAction());
+        assert_eq!(deletion, DeletionResult::RemovedFromLeafNoBubble());
 
         let leaf_ref = leaf.borrow();
 
         if let Node::Leaf {internal_leaf, .. } = leaf_ref.deref() {
             let collected_keys = internal_leaf.collect_leaf_kvs();
 
-            assert_eq!(vec![&1, &3], collected_keys);
+            assert_eq!(vec![&1], collected_keys);
         };
     }
+
+    fn build_tree_struct_for_leaves(left_child: Vec<i32>, right_child: Vec<i32>) -> Rc<RefCell<Node<i32, String>>> {
+
+        let cloned_right = right_child.clone();
+        let separator = cloned_right.first().unwrap();
+
+        let left_leaf = create_leaf_with_kvs(left_child);
+        let right_leaf = create_leaf_with_kvs(right_child);
+
+        assign_prev_next_in_order(vec!(left_leaf.clone(), right_leaf.clone()));
+        let link_node = Rc::new(RefCell::new(Node::Link {
+            internal_link: InternalLink {
+
+                separators: vec![Rc::new(*separator)],
+                children: vec![left_leaf.clone(), right_leaf.clone()],
+            }
+        }));
+
+        link_node
+    }
+
+
+    #[test]
+    fn test_delete_from_child_leaf_no_bubble() {
+        let link = build_tree_struct_for_leaves(vec!(1), vec!(2, 3));
+
+        Node::delete_internal(&link, 3);
+
+        let expected_child_kvs = vec![vec![&1], vec![&2]];
+        let link_ref = link.borrow();
+        if let Node::Link { internal_link } = link_ref.deref() {
+            assert_eq!(vec!(&2), internal_link.collect_link_separators());
+
+            for child_index in 0..internal_link.children.len() {
+                if let Node::Leaf { internal_leaf } = internal_link.children[child_index].borrow().deref() {
+                    assert_eq!(expected_child_kvs[child_index], internal_leaf.collect_leaf_kvs());
+                }
+            }
+        }
+
+    }
+
 
     #[test]
     fn test_delete_internal_from_link_without_merge() {

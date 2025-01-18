@@ -55,13 +55,7 @@ impl<K: Ord + Debug, V: Debug> BPlusTree<K, V> {
         } else {
             let internal_deletion = Node::delete_internal(&self.root.as_ref().unwrap().clone(), key);
             match internal_deletion {
-                DeletionResult::EmptiedNode { .. } => {
-                    todo!()
-                }
-                DeletionResult::NothingDeleted() => {
-                    todo!()
-                }
-                DeletionResult::DeletedNoAction() => {
+                _ => {
                     todo!()
                 }
             }
