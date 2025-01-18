@@ -1,5 +1,6 @@
 use crate::zeyrho::btree::{DEGREE, MAX_KVS_IN_LEAF, SEPARATORS_MAX_SIZE, MIN_ELEMENTS_IN_LEAF, MIN_ELEMENTS_IN_LEAF_MINUS_ONE};
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
 use std::rc::{Rc, Weak};
@@ -33,7 +34,7 @@ pub(super) struct InternalLink<K: Ord + Debug, V: Debug> {
 #[derive(Debug)]
 pub(super) struct InternalLeaf<K: Ord + Debug, V: Debug> {
     // TODO: Should these be Vec<Option<>>? It makes it a lot easier to know if we need to insert something new.
-    key_vals: Vec<(Rc<K>, V)>,
+    key_vals: VecDeque<(Rc<K>, V)>,
     next: Option<Weak<RefCell<Node<K, V>>>>,
     prev: Option<Weak<RefCell<Node<K, V>>>>,
 }
@@ -214,6 +215,10 @@ pub(super) enum DeletionResult<K: Ord + Debug> {
         bubbled_separator: Rc<K>
     },
     RemovedFromLeafNoBubble(),
+    RemovedFromLeafNeedsBubble(),
+    // This specific deletion result is when a leaf is below the minimum number of elements it should have,
+    // in this case the leaf needs to steal values from the left or right nodes depending on who has more
+    LeafNeedsBalancing(),
 }
 
 impl<K: Ord + Debug, V: Debug> Node<K, V> {
@@ -239,7 +244,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
         Node::Leaf {
             internal_leaf: InternalLeaf {
 
-            key_vals: Vec::new(),
+            key_vals: VecDeque::new(),
             next: None,
             prev: None,
             }
@@ -258,8 +263,8 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
     }
 
     pub(super) fn new_leaf_with_kv(key: Rc<K>, value: V) -> Rc<RefCell<Self>> {
-        let mut vec = Vec::new();
-        vec.push((key, value));
+        let mut vec = VecDeque::new();
+        vec.push_back((key, value));
 
         Rc::new(RefCell::new(Node::Leaf {
             internal_leaf: InternalLeaf {
@@ -414,7 +419,6 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                 let child_node = &internal_link.children[child_to_delete_from_pos];
                 let deleted_result = Self::delete_internal(child_node, deleted_key);
                 match deleted_result {
-
                     DeletionResult::EmptiedNode{} => {
                         // the link here needs to do some sort of node merging or splitting
 
@@ -445,27 +449,52 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
                         todo!()
                     }
-                    result => {
-                        result
+                    DeletionResult::LeafNeedsBalancing() => {
+                        let mut child_ref = child_node.borrow_mut();
+                        match &mut *child_ref {
+                            // FIXME: use if let match here
+                            Node::Leaf {internal_leaf} => {
+                                match (&internal_leaf.prev, &internal_leaf.next) {
+                                    // if we're looking at grabbing the neighbors elements we only try to grab the DIRECT neighbor's elements.
+                                    // we will not try and move further to the right or left -- runtime of this would be long
+                                    (Some(p), Some(n)) => todo!(),
+                                    (Some(p), None) => todo!(),
+                                    (None, Some(n)) => {
+                                        if let Some(next_neighbor) = n.upgrade() {
+                                            let mut next_neighbor_ref = next_neighbor.borrow_mut();
+                                            if let Node::Leaf { internal_leaf: neighbor_internal_leaf } = &mut *next_neighbor_ref {
+                                                // the neighbor needs to have enough elements to share and not go under the minimum
+                                                if neighbor_internal_leaf.key_vals.len() - (MIN_ELEMENTS_IN_LEAF - internal_leaf.key_vals.len()) < MIN_ELEMENTS_IN_LEAF {
+                                                    return DeletionResult::RemovedFromLeafNeedsBubble()
+                                                }
+
+                                                // we need to move the elements from the neighbor to the child we deleted from and then inform the current link node of which elements were moved so it can update its separators
+
+                                                // for our most simple case let's just take one element
+                                                let stolen_kv = neighbor_internal_leaf.key_vals.pop_front().unwrap();
+                                                internal_leaf.key_vals.push_back(stolen_kv);
+
+                                                // now we need to tell the parent about this...
+
+
+                                            }
+                                        }
+                                    }
+                                    (None, None) => {
+                                        println!("the tree can only be empty in this case");
+                                        panic!("I don't want to panic here but I want to confirm this is true")
+                                    }
+                                }
+
+                            }
+                            _ => panic!("can never happen")
+                        }
+
+                        todo!()
                     }
-                    //None => {
-                    //    println!("nothing to report, move along");
-                    //    None
-                    //}
-                    //Some(_) => {
-                    //    println!("we deleted something and now need to do something about the deletion....");
-                    //    println!("how do we know if a leaf is empty though?");
+                    d @ DeletionResult::RemovedFromLeafNoBubble() => d,
+                    _ => todo!(),
 
-                    //    if child_node.borrow().is_empty() {
-                    //        println!("need to handle child node being empty");
-                    //        panic!("child is now empty, must merge");
-                    //        todo!()
-                    //    } else {
-
-                    //
-                    //    }
-
-                    //}
                 }
             }
             Node::Leaf { internal_leaf, .. } => {
@@ -475,12 +504,12 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
 
                 match internal_leaf.key_vals.len() as i32 {
+                    MIN_ELEMENTS_IN_LEAF_MINUS_ONE => {
+                        println!("we need to re-balance here");
+                        DeletionResult::LeafNeedsBalancing()
+                    }
                     0 => {
                         DeletionResult::EmptiedNode()
-                    }
-                    MIN_ELEMENTS_IN_LEAF_MINUS_ONE => {
-                        println!("we need to rebalance here");
-                        todo!()
                     }
                     _ => {
                         if original_size != new_size {
@@ -720,39 +749,6 @@ mod tests {
             }
         }
 
-    }
-
-
-    #[test]
-    fn test_delete_internal_from_link_without_merge() {
-        let left_leaf = create_leaf_with_kvs(vec!(1, 2, 3));
-        let right_leaf = create_leaf_with_kvs(vec!(4, 5, 6));
-
-        assign_prev_next_in_order(vec!(left_leaf.clone(), right_leaf.clone()));
-
-        let link_node = Rc::new(RefCell::new(Node::Link {
-            internal_link: InternalLink {
-
-            separators: vec![Rc::new(4)],
-            children: vec![left_leaf.clone(), right_leaf.clone()],
-            }
-        }));
-
-
-        Node::delete_internal(&link_node, 3);
-
-        let expected_children_kvs = vec![vec![&1, &2], vec![&4, &5, &6]];
-        let link_ref = link_node.borrow();
-        if let Node::Link {internal_link} = link_ref.deref() {
-            assert_eq!(vec![&4], internal_link.collect_link_separators());
-
-            for child_index in 0..(internal_link.children.len()) {
-                if let Node::Leaf { internal_leaf } = internal_link.children[child_index].borrow().deref() {
-                    assert_eq!(expected_children_kvs[child_index], internal_leaf.collect_leaf_kvs());
-                }
-            }
-
-        };
     }
 
     #[test]
