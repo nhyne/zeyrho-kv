@@ -66,22 +66,21 @@ impl<K: Debug + Ord, V: Debug> InternalLink<K, V> {
     }
 
     fn collect_link_separators(&self) -> Vec<&K> {
-            let collected_separators: Vec<&K> = self.separators
-                .iter()
-                .map(|k: &Rc<K>| k.as_ref())
-                .collect();
+        let collected_separators: Vec<&K> = self.separators
+            .iter()
+            .map(|k: &Rc<K>| k.as_ref())
+            .collect();
 
-            collected_separators
+        collected_separators
     }
 }
 
 impl<K: Debug + Ord, V: Debug> InternalLeaf<K, V> {
-
     pub(super) fn len(&self) -> usize {
         self.key_vals.len()
     }
 
-    pub(super) fn iter(&self) -> impl Iterator<Item=&(Rc<K>, V)>{
+    pub(super) fn iter(&self) -> impl Iterator<Item=&(Rc<K>, V)> {
         self.key_vals.iter()
     }
 
@@ -89,32 +88,31 @@ impl<K: Debug + Ord, V: Debug> InternalLeaf<K, V> {
         &mut self,
         rc_self: &Rc<RefCell<Node<K, V>>>,
     ) -> (Rc<K>, Rc<RefCell<Node<K, V>>>) {
-            let mid = self.key_vals.len() / 2;
+        let mid = self.key_vals.len() / 2;
 
-            let split_point = self.key_vals[mid].0.clone();
-            let new_keys_padded = self.key_vals.split_off(mid);
+        let split_point = self.key_vals[mid].0.clone();
+        let new_keys_padded = self.key_vals.split_off(mid);
 
-            let new_right_node = Rc::new(RefCell::new(Node::Leaf {
-                internal_leaf: InternalLeaf {
-
+        let new_right_node = Rc::new(RefCell::new(Node::Leaf {
+            internal_leaf: InternalLeaf {
                 key_vals: new_keys_padded,
                 next: self.next.take(),
                 prev: Some(Rc::downgrade(rc_self)),
-                }
-            }));
+            }
+        }));
 
-            self.next = Some(Rc::downgrade(&new_right_node));
+        self.next = Some(Rc::downgrade(&new_right_node));
 
-            (split_point, new_right_node)
+        (split_point, new_right_node)
     }
 
     fn collect_leaf_kvs(&self) -> Vec<&K> {
-            let collected_keys: Vec<&K> = self.key_vals
-.iter()
-                .map(|(k, _): &(Rc<K>, V)| k.as_ref())
-                .collect();
+        let collected_keys: Vec<&K> = self.key_vals
+            .iter()
+            .map(|(k, _): &(Rc<K>, V)| k.as_ref())
+            .collect();
 
-            collected_keys
+        collected_keys
     }
 }
 
@@ -153,10 +151,9 @@ impl<K: Debug + Ord, V: Debug> Drop for Node<K, V> {
                         let mut n_ref = n_upgrade.borrow_mut();
 
                         match (&mut *p_ref, &mut *n_ref) {
-                            (Node::Leaf {internal_leaf: l_internal_leaf}, Node::Leaf {internal_leaf: r_internal_leaf}) => {
+                            (Node::Leaf { internal_leaf: l_internal_leaf }, Node::Leaf { internal_leaf: r_internal_leaf }) => {
                                 l_internal_leaf.next = Some(n.clone());
                                 r_internal_leaf.prev = Some(p.clone());
-
                             }
 
                             (_, _) => {
@@ -177,7 +174,7 @@ impl<K: Debug + Ord, V: Debug> Drop for Node<K, V> {
                     if let Some(p_upgrade) = p.upgrade() {
                         let mut p_ref = p_upgrade.borrow_mut();
 
-                        if let Node::Leaf {internal_leaf, .. } = &mut *p_ref {
+                        if let Node::Leaf { internal_leaf, .. } = &mut *p_ref {
                             internal_leaf.next = None;
                         }
                     }
@@ -211,7 +208,7 @@ impl<K: Debug + Ord, V: Debug> Display for Node<K, V> {
 pub(super) enum DeletionResult<K: Ord + Debug> {
     EmptiedNode(),
     NothingDeleted(),
-    Deleted{
+    Deleted {
         bubbled_separator: Rc<K>
     },
     RemovedFromLeafNoBubble(),
@@ -234,8 +231,8 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
     pub(super) fn new_link_with_seps_and_children(separators: Vec<Rc<K>>, children: Vec<Rc<RefCell<Node<K, V>>>>) -> Rc<RefCell<Self>> {
         Rc::new(RefCell::new(Node::Link {
             internal_link: InternalLink {
-            separators,
-            children,
+                separators,
+                children,
             }
         }))
     }
@@ -243,17 +240,16 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
     pub(super) fn new_leaf() -> Self {
         Node::Leaf {
             internal_leaf: InternalLeaf {
-
-            key_vals: VecDeque::new(),
-            next: None,
-            prev: None,
+                key_vals: VecDeque::new(),
+                next: None,
+                prev: None,
             }
         }
     }
 
     pub(super) fn is_empty(&self) -> bool {
         match self {
-            Node::Leaf { internal_leaf , .. } => {
+            Node::Leaf { internal_leaf, .. } => {
                 internal_leaf.key_vals.is_empty()
             }
             Node::Link { internal_link, .. } => {
@@ -268,10 +264,9 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
         Rc::new(RefCell::new(Node::Leaf {
             internal_leaf: InternalLeaf {
-
-            key_vals: vec,
-            next: None,
-            prev: None,
+                key_vals: vec,
+                next: None,
+                prev: None,
             }
         }))
     }
@@ -311,7 +306,6 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                 None
             }
         }
-
     }
 
     // the left Option is the new separator and the right is the new right node. We don't need to do anything with the left node b/c the parent is already pointing to it
@@ -419,7 +413,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                 let child_node = &internal_link.children[child_to_delete_from_pos];
                 let deleted_result = Self::delete_internal(child_node, deleted_key);
                 match deleted_result {
-                    DeletionResult::EmptiedNode{} => {
+                    DeletionResult::EmptiedNode {} => {
                         // the link here needs to do some sort of node merging or splitting
 
                         // options for merging:
@@ -434,7 +428,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
                         let mut child_ref = child_node.borrow_mut();
                         match &mut *child_ref {
-                            Node::Leaf { .. }  => {
+                            Node::Leaf { .. } => {
                                 /*
                                 by this point the child node has not been dropped so we have access to both the neighbors
                                 lets try to steal some of their values -- problem is we only want to steal from one side (whichever has more)
@@ -453,7 +447,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                         let mut child_ref = child_node.borrow_mut();
                         match &mut *child_ref {
                             // FIXME: use if let match here
-                            Node::Leaf {internal_leaf} => {
+                            Node::Leaf { internal_leaf } => {
                                 match (&internal_leaf.prev, &internal_leaf.next) {
                                     // if we're looking at grabbing the neighbors elements we only try to grab the DIRECT neighbor's elements.
                                     // we will not try and move further to the right or left -- runtime of this would be long
@@ -465,36 +459,52 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                                             if let Node::Leaf { internal_leaf: neighbor_internal_leaf } = &mut *next_neighbor_ref {
                                                 // the neighbor needs to have enough elements to share and not go under the minimum
                                                 if neighbor_internal_leaf.key_vals.len() - (MIN_ELEMENTS_IN_LEAF - internal_leaf.key_vals.len()) < MIN_ELEMENTS_IN_LEAF {
-                                                    return DeletionResult::RemovedFromLeafNeedsBubble()
+                                                    return DeletionResult::RemovedFromLeafNeedsBubble();
                                                 }
 
                                                 // we need to move the elements from the neighbor to the child we deleted from and then inform the current link node of which elements were moved so it can update its separators
 
                                                 // for our most simple case let's just take one element
                                                 let stolen_kv = neighbor_internal_leaf.key_vals.pop_front().unwrap();
+                                                let cloned_k = stolen_kv.0.clone();
                                                 internal_leaf.key_vals.push_back(stolen_kv);
 
+                                                let new_k_for_link = neighbor_internal_leaf.key_vals.front().map(|(k, _)| { k.clone() }).unwrap();
+
                                                 // now we need to tell the parent about this...
+                                                /*
+                                                how do we let the current node we did this?
+                                                we should only be stealing a single element at a time.
+                                                Should be able to let the parent know the element moved
+                                                Since it's the far left K, we should be able to just replace it with the next element
+                                                 */
 
+                                                // check our current link node (internal_link) to see if cloned_k is a current separator. If it is then swap it with new_k
 
+                                                println!("node we deleted from AFTER stealing kvs: {:?}", internal_leaf);
+                                                println!("node we stole from AFTER stealing kvs: {:?}", neighbor_internal_leaf);
+                                                let swap_pos = internal_link.separators.iter().position(|sep| {
+                                                    Rc::ptr_eq(sep, &cloned_k)
+                                                });
+                                                println!("our swap pos: {:?}", swap_pos);
+                                                if let Some(pos) = swap_pos {
+                                                    internal_link.separators[pos] = new_k_for_link;
+                                                };
                                             }
                                         }
+                                        DeletionResult::RemovedFromLeafNeedsBubble()
                                     }
                                     (None, None) => {
                                         println!("the tree can only be empty in this case");
                                         panic!("I don't want to panic here but I want to confirm this is true")
                                     }
                                 }
-
                             }
                             _ => panic!("can never happen")
                         }
-
-                        todo!()
                     }
                     d @ DeletionResult::RemovedFromLeafNoBubble() => d,
                     _ => todo!(),
-
                 }
             }
             Node::Leaf { internal_leaf, .. } => {
@@ -514,7 +524,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                     _ => {
                         if original_size != new_size {
                             println!("we removed an element");
-                            return DeletionResult::RemovedFromLeafNoBubble()
+                            return DeletionResult::RemovedFromLeafNoBubble();
                         }
                         DeletionResult::NothingDeleted()
                     }
@@ -522,12 +532,11 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
             }
         }
     }
-
-
 }
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Ref;
     use super::*;
     use std::ops::Deref;
 
@@ -536,10 +545,9 @@ mod tests {
     ) -> Rc<RefCell<Node<i32, String>>> {
         Rc::new(RefCell::new(Node::Leaf {
             internal_leaf: InternalLeaf {
-
-            key_vals: items.iter().map(|k| (Rc::new(*k), k.to_string())).collect(),
-            next: None,
-            prev: None,
+                key_vals: items.iter().map(|k| (Rc::new(*k), k.to_string())).collect(),
+                next: None,
+                prev: None,
             }
         }))
     }
@@ -549,19 +557,17 @@ mod tests {
         let initial_node = create_leaf_with_kvs(vec![1, 2, 3, 4]);
 
         if let Some((left, split, right)) = Node::split_leaf_node(&initial_node) {
+            if let Node::Leaf { internal_leaf, .. } = left.borrow().deref() {
+                let collected_key_vals = internal_leaf.collect_leaf_kvs();
+                assert_eq!(collected_key_vals, vec![&1, &2])
+            };
 
+            assert_eq!(split.as_ref(), &3);
 
-        if let Node::Leaf { internal_leaf, .. } = left.borrow().deref() {
-            let collected_key_vals = internal_leaf.collect_leaf_kvs();
-            assert_eq!(collected_key_vals, vec![&1, &2])
-        };
-
-        assert_eq!(split.as_ref(), &3);
-
-        if let Node::Leaf { internal_leaf, .. } = right.borrow().deref() {
-            let collected_key_vals = internal_leaf.collect_leaf_kvs();
-            assert_eq!(collected_key_vals, vec![&3, &4])
-        };
+            if let Node::Leaf { internal_leaf, .. } = right.borrow().deref() {
+                let collected_key_vals = internal_leaf.collect_leaf_kvs();
+                assert_eq!(collected_key_vals, vec![&3, &4])
+            };
         }
     }
 
@@ -600,10 +606,9 @@ mod tests {
 
         let link_node = Rc::new(RefCell::new(Node::Link {
             internal_link: InternalLink {
-
-            separators: vec![Rc::new(2), Rc::new(3), Rc::new(4)],
-            children: vec![first.clone(), second.clone(), third.clone(), fourth.clone()],
-        }
+                separators: vec![Rc::new(2), Rc::new(3), Rc::new(4)],
+                children: vec![first.clone(), second.clone(), third.clone(), fourth.clone()],
+            }
         }));
 
         let mut link_ref = link_node.borrow_mut();
@@ -656,7 +661,6 @@ mod tests {
                 let expected_next = [Some(fourth.clone()), None];
                 let expected_prev = [Some(second.clone()), Some(third.clone())];
                 for i in 0..internal_link.children.len() {
-
                     let child_ref = internal_link.children[i].borrow();
                     if let Node::Leaf {
                         internal_leaf
@@ -703,7 +707,7 @@ mod tests {
 
         let leaf_ref = leaf.borrow();
 
-        if let Node::Leaf {internal_leaf, .. } = leaf_ref.deref() {
+        if let Node::Leaf { internal_leaf, .. } = leaf_ref.deref() {
             let collected_keys = internal_leaf.collect_leaf_kvs();
 
             assert_eq!(vec![&1], collected_keys);
@@ -711,7 +715,6 @@ mod tests {
     }
 
     fn build_tree_struct_for_leaves(left_child: Vec<i32>, right_child: Vec<i32>) -> Rc<RefCell<Node<i32, String>>> {
-
         let cloned_right = right_child.clone();
         let separator = cloned_right.first().unwrap();
 
@@ -721,7 +724,6 @@ mod tests {
         assign_prev_next_in_order(vec!(left_leaf.clone(), right_leaf.clone()));
         let link_node = Rc::new(RefCell::new(Node::Link {
             internal_link: InternalLink {
-
                 separators: vec![Rc::new(*separator)],
                 children: vec![left_leaf.clone(), right_leaf.clone()],
             }
@@ -748,7 +750,6 @@ mod tests {
                 }
             }
         }
-
     }
 
     #[test]
@@ -758,18 +759,25 @@ mod tests {
 
         assign_prev_next_in_order(vec![left_node.clone(), right_node.clone()]);
 
-        let link_node = Rc::new(RefCell::new(Node::Link { internal_link: InternalLink{
-            separators: vec![Rc::new(2)],
-            children: vec![left_node.clone(), right_node.clone()],
-        }}));
+        let sep = match right_node.borrow().deref() {
+            Node::Leaf { internal_leaf } => {
+                let (k, _) = internal_leaf.key_vals.front().unwrap();
+                k.clone()
+            }
+            _ => {panic!("")}
+        };
+        let link_node = Rc::new(RefCell::new(Node::Link {
+            internal_link: InternalLink {
+                separators: vec![sep],
+                children: vec![left_node.clone(), right_node.clone()],
+            }
+        }));
 
         let deletion_result = Node::delete_internal(&link_node, 1);
 
-        if let Node::Link {internal_link} = link_node.borrow().deref() {
-
+        if let Node::Link { internal_link } = link_node.borrow().deref() {
             assert_eq!(&3, internal_link.separators.first().unwrap().as_ref());
         };
-
     }
 
     #[test]
