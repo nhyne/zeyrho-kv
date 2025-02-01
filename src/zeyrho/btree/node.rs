@@ -536,21 +536,8 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Ref;
     use super::*;
     use std::ops::Deref;
-
-    fn create_leaf_with_kvs(
-        items: Vec<i32>,
-    ) -> Rc<RefCell<Node<i32, String>>> {
-        Rc::new(RefCell::new(Node::Leaf {
-            internal_leaf: InternalLeaf {
-                key_vals: items.iter().map(|k| (Rc::new(*k), k.to_string())).collect(),
-                next: None,
-                prev: None,
-            }
-        }))
-    }
 
     #[test]
     fn test_split_leaf() {
@@ -754,28 +741,14 @@ mod tests {
 
     #[test]
     fn test_delete_empty_child_node() {
-        let left_node = create_leaf_with_kvs(vec![1]);
-        let right_node = create_leaf_with_kvs(vec![2, 3]);
+        let one = Rc::new(1);
+        let two = Rc::new(2);
+        let three = Rc::new(3);
+        let root_node = build_node_tree(vec![two.clone()], None, Some(vec![vec![one.clone()], vec![two.clone(), three.clone()]]));
 
-        assign_prev_next_in_order(vec![left_node.clone(), right_node.clone()]);
+        let deletion_result = Node::delete_internal(&root_node, 1);
 
-        let sep = match right_node.borrow().deref() {
-            Node::Leaf { internal_leaf } => {
-                let (k, _) = internal_leaf.key_vals.front().unwrap();
-                k.clone()
-            }
-            _ => {panic!("")}
-        };
-        let link_node = Rc::new(RefCell::new(Node::Link {
-            internal_link: InternalLink {
-                separators: vec![sep],
-                children: vec![left_node.clone(), right_node.clone()],
-            }
-        }));
-
-        let deletion_result = Node::delete_internal(&link_node, 1);
-
-        if let Node::Link { internal_link } = link_node.borrow().deref() {
+        if let Node::Link { internal_link } = root_node.borrow().deref() {
             assert_eq!(&3, internal_link.separators.first().unwrap().as_ref());
         };
     }
@@ -786,4 +759,61 @@ mod tests {
         assert_eq!(size_of::<InternalLink<i32, String>>(), 48);
         assert_eq!(size_of::<InternalLeaf<i32, String>>(), 40);
     }
+
+
+    fn build_node_tree(root: Vec<Rc<i32>>, first_children: Option<Vec<Vec<Rc<i32>>>>, leaves: Option<Vec<Vec<Rc<i32>>>>) -> Rc<RefCell<Node<i32, String>>>{
+        match (first_children, leaves) {
+            (Some(children), Some(leaves)) => todo!(),
+            (None, None) => {
+                Rc::new(RefCell::new(Node::Link {
+                    internal_link: InternalLink {
+                        separators: root,
+                        children: Vec::new(),
+                    }
+                }))
+            },
+            (None, Some(leaves)) => {
+                let nodes: Vec<Rc<RefCell<Node<i32, String>>>> = leaves.into_iter().map(|vals| create_leaf_with_rc_kvs(vals)).collect();
+                let cloned_children: Vec<Rc<RefCell<Node<i32, String>>>> = nodes.iter().map(|i| i.clone()).collect();
+                assign_prev_next_in_order(nodes);
+
+                Rc::new(RefCell::new(Node::Link {
+                    internal_link: InternalLink {
+                        separators: root,
+                        children: cloned_children,
+                    }
+                }))
+            },
+            (Some(_), None) => panic!("cannot build node without leaves")
+        }
+    }
+
+    fn create_leaf_with_rc_kvs(
+        items: Vec<Rc<i32>>
+    ) -> Rc<RefCell<Node<i32, String>>> {
+
+        Rc::new(RefCell::new(Node::Leaf {
+            internal_leaf: InternalLeaf {
+                key_vals: VecDeque::from_iter(items.into_iter().map(|k| {
+                    let s = k.to_string();
+                    (k, s)
+                })),
+                next: None,
+                prev: None,
+            }
+        }))
+    }
+
+    fn create_leaf_with_kvs(
+        items: Vec<i32>,
+    ) -> Rc<RefCell<Node<i32, String>>> {
+        Rc::new(RefCell::new(Node::Leaf {
+            internal_leaf: InternalLeaf {
+                key_vals: items.iter().map(|k| (Rc::new(*k), k.to_string())).collect(),
+                next: None,
+                prev: None,
+            }
+        }))
+    }
+
 }
