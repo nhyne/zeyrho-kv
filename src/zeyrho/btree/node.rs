@@ -451,8 +451,27 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                                 match (&internal_leaf.prev, &internal_leaf.next) {
                                     // if we're looking at grabbing the neighbors elements we only try to grab the DIRECT neighbor's elements.
                                     // we will not try and move further to the right or left -- runtime of this would be long
-                                    (Some(p), Some(n)) => todo!(),
-                                    (Some(p), None) => todo!(),
+                                    (Some(p), Some(n)) => {
+
+                                        todo!()
+                                    },
+                                    (Some(p), None) => {
+                                        if let Some(previous_neighbor) = p.upgrade() {
+                                            let mut prev_neighbor_ref = previous_neighbor.borrow_mut();
+                                            if let Node::Leaf { internal_leaf: neighbor_internal_leaf } = &mut *prev_neighbor_ref {
+                                                // the neighbor needs to have enough elements to share and not go under the minimum
+                                                if neighbor_internal_leaf.key_vals.len() - (MIN_ELEMENTS_IN_LEAF - internal_leaf.key_vals.len()) < MIN_ELEMENTS_IN_LEAF {
+                                                    return DeletionResult::RemovedFromLeafNeedsBubble();
+                                                }
+                                                let stolen_kv = neighbor_internal_leaf.key_vals.pop_back().unwrap();
+                                                let new_k_for_link = stolen_kv.0.clone();
+                                                internal_leaf.key_vals.push_front(stolen_kv);
+
+                                                internal_link.separators[0] = new_k_for_link;
+                                            }
+                                        }
+                                        DeletionResult::RemovedFromLeafNeedsBubble()
+                                    },
                                     (None, Some(n)) => {
                                         if let Some(next_neighbor) = n.upgrade() {
                                             let mut next_neighbor_ref = next_neighbor.borrow_mut();
@@ -461,32 +480,14 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                                                 if neighbor_internal_leaf.key_vals.len() - (MIN_ELEMENTS_IN_LEAF - internal_leaf.key_vals.len()) < MIN_ELEMENTS_IN_LEAF {
                                                     return DeletionResult::RemovedFromLeafNeedsBubble();
                                                 }
-
-                                                // we need to move the elements from the neighbor to the child we deleted from and then inform the current link node of which elements were moved so it can update its separators
-
-                                                // for our most simple case let's just take one element
                                                 let stolen_kv = neighbor_internal_leaf.key_vals.pop_front().unwrap();
                                                 let cloned_k = stolen_kv.0.clone();
                                                 internal_leaf.key_vals.push_back(stolen_kv);
 
                                                 let new_k_for_link = neighbor_internal_leaf.key_vals.front().map(|(k, _)| { k.clone() }).unwrap();
-
-                                                // now we need to tell the parent about this...
-                                                /*
-                                                how do we let the current node we did this?
-                                                we should only be stealing a single element at a time.
-                                                Should be able to let the parent know the element moved
-                                                Since it's the far left K, we should be able to just replace it with the next element
-                                                 */
-
-                                                // check our current link node (internal_link) to see if cloned_k is a current separator. If it is then swap it with new_k
-
-                                                println!("node we deleted from AFTER stealing kvs: {:?}", internal_leaf);
-                                                println!("node we stole from AFTER stealing kvs: {:?}", neighbor_internal_leaf);
                                                 let swap_pos = internal_link.separators.iter().position(|sep| {
                                                     Rc::ptr_eq(sep, &cloned_k)
                                                 });
-                                                println!("our swap pos: {:?}", swap_pos);
                                                 if let Some(pos) = swap_pos {
                                                     internal_link.separators[pos] = new_k_for_link;
                                                 };
@@ -497,6 +498,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                                     (None, None) => {
                                         println!("the tree can only be empty in this case");
                                         panic!("I don't want to panic here but I want to confirm this is true")
+                                        //DeletionResult::EmptiedNode()
                                     }
                                 }
                             }
@@ -702,7 +704,7 @@ mod tests {
     }
 
     #[test]
-    fn test_delete_from_child_leaf_no_bubble() {
+    fn test_delete_from_left_child_leaf_no_bubble() {
         let one = Rc::new(1);
         let two = Rc::new(2);
         let three = Rc::new(3);
@@ -724,7 +726,7 @@ mod tests {
     }
 
     #[test]
-    fn test_delete_empty_child_node() {
+    fn test_delete_left_empty_child_node() {
         let one = Rc::new(1);
         let two = Rc::new(2);
         let three = Rc::new(3);
@@ -734,6 +736,20 @@ mod tests {
 
         if let Node::Link { internal_link } = root_node.borrow().deref() {
             assert_eq!(&3, internal_link.separators.first().unwrap().as_ref());
+        };
+    }
+
+    #[test]
+    fn test_delete_right_empty_child_node() {
+        let one = Rc::new(1);
+        let two = Rc::new(2);
+        let three = Rc::new(3);
+        let root_node = build_node_tree(vec![three.clone()], Some(vec![vec![one.clone(), two.clone()], vec![three.clone()]]));
+
+        let deletion_result = Node::delete_internal(&root_node, 3);
+
+        if let Node::Link { internal_link } = root_node.borrow().deref() {
+            assert_eq!(&2, internal_link.separators.first().unwrap().as_ref());
         };
     }
 
