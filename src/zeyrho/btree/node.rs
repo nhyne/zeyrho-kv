@@ -34,7 +34,7 @@ pub(super) struct InternalLink<K: Ord + Debug, V: Debug> {
 #[derive(Debug)]
 pub(super) struct InternalLeaf<K: Ord + Debug, V: Debug> {
     // TODO: Should these be Vec<Option<>>? It makes it a lot easier to know if we need to insert something new.
-    key_vals: VecDeque<(Rc<K>, V)>,
+    key_vals: VecDeque<(Rc<K>, V)>, // a leaf has DEGREE key vals
     next: Option<Weak<RefCell<Node<K, V>>>>,
     prev: Option<Weak<RefCell<Node<K, V>>>>,
 }
@@ -701,28 +701,12 @@ mod tests {
         };
     }
 
-    fn build_tree_struct_for_leaves(left_child: Vec<i32>, right_child: Vec<i32>) -> Rc<RefCell<Node<i32, String>>> {
-        let cloned_right = right_child.clone();
-        let separator = cloned_right.first().unwrap();
-
-        let left_leaf = create_leaf_with_kvs(left_child);
-        let right_leaf = create_leaf_with_kvs(right_child);
-
-        assign_prev_next_in_order(vec!(left_leaf.clone(), right_leaf.clone()));
-        let link_node = Rc::new(RefCell::new(Node::Link {
-            internal_link: InternalLink {
-                separators: vec![Rc::new(*separator)],
-                children: vec![left_leaf.clone(), right_leaf.clone()],
-            }
-        }));
-
-        link_node
-    }
-
-
     #[test]
     fn test_delete_from_child_leaf_no_bubble() {
-        let link = build_tree_struct_for_leaves(vec!(1), vec!(2, 3));
+        let one = Rc::new(1);
+        let two = Rc::new(2);
+        let three = Rc::new(3);
+        let link = build_node_tree(vec![two.clone()], Some(vec![vec![one.clone()], vec![two.clone(), three.clone()]]));
 
         Node::delete_internal(&link, 3);
 
@@ -744,7 +728,7 @@ mod tests {
         let one = Rc::new(1);
         let two = Rc::new(2);
         let three = Rc::new(3);
-        let root_node = build_node_tree(vec![two.clone()], None, Some(vec![vec![one.clone()], vec![two.clone(), three.clone()]]));
+        let root_node = build_node_tree(vec![two.clone()], Some(vec![vec![one.clone()], vec![two.clone(), three.clone()]]));
 
         let deletion_result = Node::delete_internal(&root_node, 1);
 
@@ -755,24 +739,19 @@ mod tests {
 
     #[test]
     fn test_sizes_stay_the_same() {
-        assert_eq!(size_of::<Node<i32, String>>(), 48);
+        assert_eq!(size_of::<Node<i32, String>>(), 56);
         assert_eq!(size_of::<InternalLink<i32, String>>(), 48);
-        assert_eq!(size_of::<InternalLeaf<i32, String>>(), 40);
+        assert_eq!(size_of::<InternalLeaf<i32, String>>(), 48);
     }
 
-
-    fn build_node_tree(root: Vec<Rc<i32>>, first_children: Option<Vec<Vec<Rc<i32>>>>, leaves: Option<Vec<Vec<Rc<i32>>>>) -> Rc<RefCell<Node<i32, String>>>{
-        match (first_children, leaves) {
-            (Some(children), Some(leaves)) => todo!(),
-            (None, None) => {
-                Rc::new(RefCell::new(Node::Link {
-                    internal_link: InternalLink {
-                        separators: root,
-                        children: Vec::new(),
-                    }
-                }))
-            },
-            (None, Some(leaves)) => {
+    // this will build a link with children as long as I know the separators
+    /*
+    i.e. I can call this with ([2], [[1], [2, 3]]) and get a single link node with a single sep of 2 and the two expected child nodes
+     */
+    fn build_node_tree(root: Vec<Rc<i32>>, leaves: Option<Vec<Vec<Rc<i32>>>>) -> Rc<RefCell<Node<i32, String>>>{
+        match leaves {
+            None => create_leaf_with_rc_kvs(root),
+            Some(leaves) => {
                 let nodes: Vec<Rc<RefCell<Node<i32, String>>>> = leaves.into_iter().map(|vals| create_leaf_with_rc_kvs(vals)).collect();
                 let cloned_children: Vec<Rc<RefCell<Node<i32, String>>>> = nodes.iter().map(|i| i.clone()).collect();
                 assign_prev_next_in_order(nodes);
@@ -784,7 +763,6 @@ mod tests {
                     }
                 }))
             },
-            (Some(_), None) => panic!("cannot build node without leaves")
         }
     }
 
