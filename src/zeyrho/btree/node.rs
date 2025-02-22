@@ -204,23 +204,28 @@ impl<K: Debug + Ord, V: Debug> Display for Node<K, V> {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub(super) enum DeletionResult<K: Ord + Debug> {
+#[derive(Debug)]
+pub(super) enum DeletionResult<K: Ord + Debug, V: Debug> {
     NothingDeleted(),
     // noop for when the deletion is handled by the child nodes completely without needing to pass information up
     NoOperation(),
     RemovedFromLeaf {
+        deleted_rc: Rc<K>,
         new_max_k_in_leaf: Option<Rc<K>>
     },
     RemovedFromLeafNeedsBubble {
+        deleted_rc: Rc<K>,
         new_max_k_in_leaf: Option<Rc<K>>
     },
     // This case is when the link node does not have enough separators to maintain the level of the tree
     // We need to steal from parent link nodes in this case
-    LinkNeedsBubble(),
+    LinkNeedsBubble {
+        deleted_rc: Rc<K>,
+        link_needs_assistance: Rc<RefCell<Node<K, V>>>
+    },
     // This specific deletion result is when a leaf is below the minimum number of elements it should have,
     // in this case the leaf needs to steal values from the left or right nodes depending on who has more
-    LeafNeedsBalancing(),
+    LeafNeedsBalancing{deleted_rc: Rc<K>},
 }
 
 impl<K: Ord + Debug, V: Debug> Node<K, V> {
@@ -403,7 +408,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
         This is pretty gross, should I just wrap this in a deletion type?
      */
-    pub(super) fn delete_internal(node: &Rc<RefCell<Node<K, V>>>, deleted_key: K) -> DeletionResult<K> {
+    pub(super) fn delete_internal(node: &Rc<RefCell<Node<K, V>>>, deleted_key: K) -> DeletionResult<K, V> {
         // if link then see if any of the values make sense to continue searching -- I think this is always the case?
         // if leaf then iterate through the K/Vs and delete if we get a match
         let mut node_ref = node.borrow_mut();
@@ -418,7 +423,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                 let child_node = &internal_link.children[child_to_delete_from_pos];
                 let deleted_result = Self::delete_internal(child_node, deleted_key);
                 match deleted_result {
-                    DeletionResult::LeafNeedsBalancing() => {
+                    DeletionResult::LeafNeedsBalancing{deleted_rc} => {
                         let mut child_ref = child_node.borrow_mut();
                         match &mut *child_ref {
                             // FIXME: use if let match here
@@ -436,6 +441,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                                                 // the neighbor needs to have enough elements to share and not go under the minimum
                                                 if neighbor_internal_leaf.key_vals.len() - (MIN_ELEMENTS_IN_LEAF - internal_leaf.key_vals.len()) < MIN_ELEMENTS_IN_LEAF {
                                                     return DeletionResult::RemovedFromLeafNeedsBubble {
+                                                        deleted_rc,
                                                         new_max_k_in_leaf: internal_leaf.key_vals.back().map(|k| { k.0.clone() })
                                                     };
                                                 }
@@ -456,6 +462,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                                                 if neighbor_internal_leaf.key_vals.len() - (MIN_ELEMENTS_IN_LEAF - internal_leaf.key_vals.len()) < MIN_ELEMENTS_IN_LEAF {
                                                     println!("not enough elements in neighbor, returning needs bubble");
                                                     return DeletionResult::RemovedFromLeafNeedsBubble {
+                                                        deleted_rc,
                                                         new_max_k_in_leaf: internal_leaf.key_vals.back().map(|k| { k.0.clone() })
                                                     };
                                                 }
@@ -486,7 +493,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                         }
                     }
                     d @ DeletionResult::RemovedFromLeaf { .. } => d,
-                    DeletionResult::RemovedFromLeafNeedsBubble { new_max_k_in_leaf } => {
+                    DeletionResult::RemovedFromLeafNeedsBubble { deleted_rc, new_max_k_in_leaf } => {
                         println!("now the parent link of the deleted node needs to figure out what to do");
                         /*
                         There are two cases I can think of that are worth looking at here:
@@ -494,10 +501,24 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                             if we have more than one we can break the whole link node down and remove one separator
                         2. when the link node has a single separator -- this case is going to be much more difficult b/c we need to keep going up the tree to balance
                          */
+                        match new_max_k_in_leaf {
+                            None => {
+                                println!("we've emptied a node");
+                            }
+                            Some(rc) => {
+                                println!("we have a new separator for this link");
+                                let pos_sep_to_swap = internal_link.separators.iter().position(|s| Rc::ptr_eq(s, &rc)).unwrap();
+                                internal_link.separators[pos_sep_to_swap] = rc;
+                            }
+                        }
                         match internal_link.separators.len() {
                             1 => {
-                                println!("this is the hard case and we need to bubble again, essentially pulling down the parent link node separators until we can balance the tree");
-                                return DeletionResult::LinkNeedsBubble();
+                                println!("this is the hard case and we need to bubble again");
+                                println!("we'll start by stealing a single separator from the parent");
+                                return DeletionResult::LinkNeedsBubble{
+                                    deleted_rc,
+                                    link_needs_assistance: child_node.clone()
+                                };
                             }
                             more_than_one => {}
                         }
@@ -511,24 +532,36 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
             }
             Node::Leaf { internal_leaf, .. } => {
                 let original_size = internal_leaf.key_vals.len();
-                internal_leaf.key_vals.retain(|(k, _)| *k.as_ref() != deleted_key);
-                let new_size = internal_leaf.key_vals.len();
+                let rc_to_delete = internal_leaf.key_vals.iter().find(|(k, _)| *k.as_ref() == deleted_key);
 
-
-                match internal_leaf.key_vals.len() as i32 {
-                    MIN_ELEMENTS_IN_LEAF_MINUS_ONE => {
-                        println!("we need to re-balance here");
-                        DeletionResult::LeafNeedsBalancing()
-                    }
-                    _ => {
-                        if original_size != new_size {
-                            println!("we removed an element");
-                            // FIXME: What if the deleted key is a separator somewhere? We have to remove that....
-                            return DeletionResult::RemovedFromLeaf {
-                                new_max_k_in_leaf: internal_leaf.key_vals.back().map(|k| {k.0.clone()})
-                            };
-                        }
+                match rc_to_delete {
+                    None => {
                         DeletionResult::NothingDeleted()
+                    }
+                    Some((rc, _)) => {
+                        let deleted_rc: Rc<K> = rc.clone();
+                        internal_leaf.key_vals.retain(|(k, _)| *k.as_ref() != deleted_key);
+                        let new_size = internal_leaf.key_vals.len();
+                        match internal_leaf.key_vals.len() as i32 {
+                            MIN_ELEMENTS_IN_LEAF_MINUS_ONE => {
+                                println!("we need to re-balance here");
+                                DeletionResult::LeafNeedsBalancing{
+                                    deleted_rc
+                                }
+                            }
+                            _ => {
+                                if original_size != new_size {
+                                    println!("we removed an element");
+                                    // FIXME: What if the deleted key is a separator somewhere? We have to remove that....
+                                    return DeletionResult::RemovedFromLeaf {
+                                        deleted_rc,
+                                        new_max_k_in_leaf: internal_leaf.key_vals.back().map(|k| {k.0.clone()})
+                                    };
+                                }
+                                DeletionResult::NothingDeleted()
+                            }
+                        }
+
                     }
                 }
             }
@@ -693,7 +726,7 @@ mod tests {
         let deletion = Node::delete_internal(&leaf, 2);
 
         match deletion {
-            DeletionResult::RemovedFromLeaf { new_max_k_in_leaf } => {
+            DeletionResult::RemovedFromLeaf { new_max_k_in_leaf, .. } => {
                 assert_eq!(new_max_k_in_leaf.unwrap().deref(), &1)
             }
             _ => panic!("bad return type for test")

@@ -50,32 +50,63 @@ impl<K: Ord + Debug, V: Debug> BPlusTree<K, V> {
     }
 
     pub fn delete(&mut self, key: K) -> Result<(), ()> {
-        if self.root.is_none() {
-            Err(())
-        } else {
-            let internal_deletion = Node::delete_internal(&self.root.as_ref().unwrap().clone(), key);
-            match internal_deletion {
-                DeletionResult::RemovedFromLeaf{
-                    new_max_k_in_leaf
-                } => todo!(),
-                DeletionResult::LeafNeedsBalancing() => {
-                    println!("balancing should only reach here if it is a leaf node");
-                    self.root.take();
-                    Ok(())
-                }
-                DeletionResult::RemovedFromLeafNeedsBubble{
-                    new_max_k_in_leaf
-                } => {
-                    println!("tree after delete: {}", self);
-                    println!("bubbling should not reach this high");
-                    Ok(())
-                }
-                DeletionResult::NoOperation() => Ok(()),
-                DeletionResult::LinkNeedsBubble() => {
-                    todo!()
-                }
-                _ => {
-                    todo!()
+        match &self.root {
+            None => {
+                Err(())
+            }
+            Some(root_rc) => {
+
+                let internal_deletion = Node::delete_internal(&root_rc.clone(), key);
+                match internal_deletion {
+                    DeletionResult::RemovedFromLeaf{
+                        new_max_k_in_leaf, ..
+                    } => todo!(),
+                    DeletionResult::LeafNeedsBalancing{..} => {
+                        println!("balancing should only reach here if it is a leaf node");
+                        self.root.take();
+                        Ok(())
+                    }
+                    DeletionResult::RemovedFromLeafNeedsBubble{
+                        new_max_k_in_leaf, ..
+                    } => {
+                        println!("tree after delete: {}", self);
+                        println!("bubbling should not reach this high");
+                        Ok(())
+                    }
+                    DeletionResult::NoOperation() => Ok(()),
+                    DeletionResult::LinkNeedsBubble{link_needs_assistance, ..} => {
+                        /*
+                        if a link needs bubbling here then we have to do one of a couple of things
+                        1. if we have one element then merge down with our right child
+                        2. if we have two elements then give the first separator to our left child and prop down
+                         */
+                        match &mut *root_rc.borrow_mut() {
+                            Node::Leaf { .. } => panic!("cannot bubble link if the root is a leaf"),
+                            Node::Link { internal_link } => {
+                                match internal_link.separators.len() {
+                                    1 => {
+                                        // here we merge downward
+                                        /*
+                                        check the neighboring links to see if there's an easy move?
+
+                                         */
+                                    }
+                                    _ => {
+                                        // here we can just hand off part of our slice
+                                        // the problem is how do we know which child needs the assistance?
+
+                                        // find the child link
+                                        let pos_of_child_needing_slice = internal_link.children.iter().position(|s| Rc::ptr_eq(s, &link_needs_assistance));
+                                        println!("child to assist: {:?}", pos_of_child_needing_slice);
+                                    }
+                                }
+                            }
+                        }
+                        todo!()
+                    }
+                    _ => {
+                        todo!()
+                    }
                 }
             }
         }
