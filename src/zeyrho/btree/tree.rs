@@ -71,6 +71,9 @@ impl<K: Ord + Debug, V: Debug> BPlusTree<K, V> {
                     Ok(())
                 }
                 DeletionResult::NoOperation() => Ok(()),
+                DeletionResult::LinkNeedsBubble() => {
+                    todo!()
+                }
                 _ => {
                     todo!()
                 }

@@ -209,12 +209,11 @@ pub(super) enum DeletionResult<K: Ord + Debug> {
     NothingDeleted(),
     // noop for when the deletion is handled by the child nodes completely without needing to pass information up
     NoOperation(),
-    EmptiedNode(),
     RemovedFromLeaf {
-        new_max_k_in_leaf: Rc<K>
+        new_max_k_in_leaf: Option<Rc<K>>
     },
     RemovedFromLeafNeedsBubble {
-        new_max_k_in_leaf: Rc<K>
+        new_max_k_in_leaf: Option<Rc<K>>
     },
     // This case is when the link node does not have enough separators to maintain the level of the tree
     // We need to steal from parent link nodes in this case
@@ -436,12 +435,8 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                                             if let Node::Leaf { internal_leaf: neighbor_internal_leaf } = &mut *prev_neighbor_ref {
                                                 // the neighbor needs to have enough elements to share and not go under the minimum
                                                 if neighbor_internal_leaf.key_vals.len() - (MIN_ELEMENTS_IN_LEAF - internal_leaf.key_vals.len()) < MIN_ELEMENTS_IN_LEAF {
-                                                    return if internal_leaf.key_vals.is_empty() {
-                                                        DeletionResult::EmptiedNode()
-                                                    } else {
-                                                        DeletionResult::RemovedFromLeafNeedsBubble {
-                                                            new_max_k_in_leaf: internal_leaf.key_vals.back().unwrap().0.clone()
-                                                        }
+                                                    return DeletionResult::RemovedFromLeafNeedsBubble {
+                                                        new_max_k_in_leaf: internal_leaf.key_vals.back().map(|k| { k.0.clone() })
                                                     };
                                                 }
                                                 let stolen_kv = neighbor_internal_leaf.key_vals.pop_back().unwrap();
@@ -460,12 +455,8 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                                                 // the neighbor needs to have enough elements to share and not go under the minimum
                                                 if neighbor_internal_leaf.key_vals.len() - (MIN_ELEMENTS_IN_LEAF - internal_leaf.key_vals.len()) < MIN_ELEMENTS_IN_LEAF {
                                                     println!("not enough elements in neighbor, returning needs bubble");
-                                                    return if internal_leaf.key_vals.is_empty() {
-                                                        DeletionResult::EmptiedNode()
-                                                    } else {
-                                                        DeletionResult::RemovedFromLeafNeedsBubble {
-                                                            new_max_k_in_leaf: internal_leaf.key_vals.back().unwrap().0.clone()
-                                                        }
+                                                    return DeletionResult::RemovedFromLeafNeedsBubble {
+                                                        new_max_k_in_leaf: internal_leaf.key_vals.back().map(|k| { k.0.clone() })
                                                     };
                                                 }
                                                 let stolen_kv = neighbor_internal_leaf.key_vals.pop_front().unwrap();
@@ -534,7 +525,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                             println!("we removed an element");
                             // FIXME: What if the deleted key is a separator somewhere? We have to remove that....
                             return DeletionResult::RemovedFromLeaf {
-                                new_max_k_in_leaf: internal_leaf.key_vals.back().unwrap().0.clone()
+                                new_max_k_in_leaf: internal_leaf.key_vals.back().map(|k| {k.0.clone()})
                             };
                         }
                         DeletionResult::NothingDeleted()
@@ -703,7 +694,7 @@ mod tests {
 
         match deletion {
             DeletionResult::RemovedFromLeaf { new_max_k_in_leaf } => {
-                assert_eq!(new_max_k_in_leaf.deref(), &1)
+                assert_eq!(new_max_k_in_leaf.unwrap().deref(), &1)
             }
             _ => panic!("bad return type for test")
         }
