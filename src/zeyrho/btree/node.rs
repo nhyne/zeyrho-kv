@@ -206,13 +206,19 @@ impl<K: Debug + Ord, V: Debug> Display for Node<K, V> {
 
 #[derive(Debug, PartialEq)]
 pub(super) enum DeletionResult<K: Ord + Debug> {
-    EmptiedNode(),
     NothingDeleted(),
-    Deleted {
-        bubbled_separator: Rc<K>
+    // noop for when the deletion is handled by the child nodes completely without needing to pass information up
+    NoOperation(),
+    EmptiedNode(),
+    RemovedFromLeaf {
+        new_max_k_in_leaf: Rc<K>
     },
-    RemovedFromLeafNoBubble(),
-    RemovedFromLeafNeedsBubble(),
+    RemovedFromLeafNeedsBubble {
+        new_max_k_in_leaf: Rc<K>
+    },
+    // This case is when the link node does not have enough separators to maintain the level of the tree
+    // We need to steal from parent link nodes in this case
+    LinkNeedsBubble(),
     // This specific deletion result is when a leaf is below the minimum number of elements it should have,
     // in this case the leaf needs to steal values from the left or right nodes depending on who has more
     LeafNeedsBalancing(),
@@ -413,36 +419,6 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                 let child_node = &internal_link.children[child_to_delete_from_pos];
                 let deleted_result = Self::delete_internal(child_node, deleted_key);
                 match deleted_result {
-                    DeletionResult::EmptiedNode {} => {
-                        // the link here needs to do some sort of node merging or splitting
-
-                        // options for merging:
-                        // next door node has some values we can steal (this should work in any direction)
-
-                        // let's do one of two things
-                        /*
-                            if we're working with leaf nodes (the child is a leaf) then let's try to grab some values from other leaves
-                                - apparently we're supposed to keep a certain number of elements in each node based on the depth / degree
-                                - for a first pass let's skip that and then come back to it after the fact
-                         */
-
-                        let mut child_ref = child_node.borrow_mut();
-                        match &mut *child_ref {
-                            Node::Leaf { .. } => {
-                                /*
-                                by this point the child node has not been dropped so we have access to both the neighbors
-                                lets try to steal some of their values -- problem is we only want to steal from one side (whichever has more)
-                                the node we should pick to steal from should be based on the direction of the K value compared to separators
-                                i.e. if we have seps [1, 4, 8] and delete value 5, it shouldn't matter because we haven't done anything with the separator value K
-                                we but if we delete 4 then we have to pull from the right?
-                                something seems off about this....
-                                 */
-                            }
-                            Node::Link { .. } => {}
-                        }
-
-                        todo!()
-                    }
                     DeletionResult::LeafNeedsBalancing() => {
                         let mut child_ref = child_node.borrow_mut();
                         match &mut *child_ref {
@@ -452,16 +428,21 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                                     // if we're looking at grabbing the neighbors elements we only try to grab the DIRECT neighbor's elements.
                                     // we will not try and move further to the right or left -- runtime of this would be long
                                     (Some(p), Some(n)) => {
-
                                         todo!()
-                                    },
+                                    }
                                     (Some(p), None) => {
                                         if let Some(previous_neighbor) = p.upgrade() {
                                             let mut prev_neighbor_ref = previous_neighbor.borrow_mut();
                                             if let Node::Leaf { internal_leaf: neighbor_internal_leaf } = &mut *prev_neighbor_ref {
                                                 // the neighbor needs to have enough elements to share and not go under the minimum
                                                 if neighbor_internal_leaf.key_vals.len() - (MIN_ELEMENTS_IN_LEAF - internal_leaf.key_vals.len()) < MIN_ELEMENTS_IN_LEAF {
-                                                    return DeletionResult::RemovedFromLeafNeedsBubble();
+                                                    return if internal_leaf.key_vals.is_empty() {
+                                                        DeletionResult::EmptiedNode()
+                                                    } else {
+                                                        DeletionResult::RemovedFromLeafNeedsBubble {
+                                                            new_max_k_in_leaf: internal_leaf.key_vals.back().unwrap().0.clone()
+                                                        }
+                                                    };
                                                 }
                                                 let stolen_kv = neighbor_internal_leaf.key_vals.pop_back().unwrap();
                                                 let new_k_for_link = stolen_kv.0.clone();
@@ -470,15 +451,22 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                                                 internal_link.separators[0] = new_k_for_link;
                                             }
                                         }
-                                        DeletionResult::RemovedFromLeafNeedsBubble()
-                                    },
+                                        DeletionResult::NoOperation()
+                                    }
                                     (None, Some(n)) => {
                                         if let Some(next_neighbor) = n.upgrade() {
                                             let mut next_neighbor_ref = next_neighbor.borrow_mut();
                                             if let Node::Leaf { internal_leaf: neighbor_internal_leaf } = &mut *next_neighbor_ref {
                                                 // the neighbor needs to have enough elements to share and not go under the minimum
                                                 if neighbor_internal_leaf.key_vals.len() - (MIN_ELEMENTS_IN_LEAF - internal_leaf.key_vals.len()) < MIN_ELEMENTS_IN_LEAF {
-                                                    return DeletionResult::RemovedFromLeafNeedsBubble();
+                                                    println!("not enough elements in neighbor, returning needs bubble");
+                                                    return if internal_leaf.key_vals.is_empty() {
+                                                        DeletionResult::EmptiedNode()
+                                                    } else {
+                                                        DeletionResult::RemovedFromLeafNeedsBubble {
+                                                            new_max_k_in_leaf: internal_leaf.key_vals.back().unwrap().0.clone()
+                                                        }
+                                                    };
                                                 }
                                                 let stolen_kv = neighbor_internal_leaf.key_vals.pop_front().unwrap();
                                                 let cloned_k = stolen_kv.0.clone();
@@ -493,7 +481,8 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                                                 };
                                             }
                                         }
-                                        DeletionResult::RemovedFromLeafNeedsBubble()
+                                        println!("did some stuff but still need bubble");
+                                        DeletionResult::NoOperation()
                                     }
                                     (None, None) => {
                                         println!("the tree can only be empty in this case");
@@ -505,8 +494,28 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                             _ => panic!("can never happen")
                         }
                     }
-                    d @ DeletionResult::RemovedFromLeafNoBubble() => d,
-                    _ => todo!(),
+                    d @ DeletionResult::RemovedFromLeaf { .. } => d,
+                    DeletionResult::RemovedFromLeafNeedsBubble { new_max_k_in_leaf } => {
+                        println!("now the parent link of the deleted node needs to figure out what to do");
+                        /*
+                        There are two cases I can think of that are worth looking at here:
+                        1. when the link node we're looking at has more than one separator
+                            if we have more than one we can break the whole link node down and remove one separator
+                        2. when the link node has a single separator -- this case is going to be much more difficult b/c we need to keep going up the tree to balance
+                         */
+                        match internal_link.separators.len() {
+                            1 => {
+                                println!("this is the hard case and we need to bubble again, essentially pulling down the parent link node separators until we can balance the tree");
+                                return DeletionResult::LinkNeedsBubble();
+                            }
+                            more_than_one => {}
+                        }
+                        todo!();
+                    }
+                    _ => {
+                        println!("reached the catch all case");
+                        todo!()
+                    }
                 }
             }
             Node::Leaf { internal_leaf, .. } => {
@@ -520,13 +529,13 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                         println!("we need to re-balance here");
                         DeletionResult::LeafNeedsBalancing()
                     }
-                    0 => {
-                        DeletionResult::EmptiedNode()
-                    }
                     _ => {
                         if original_size != new_size {
                             println!("we removed an element");
-                            return DeletionResult::RemovedFromLeafNoBubble();
+                            // FIXME: What if the deleted key is a separator somewhere? We have to remove that....
+                            return DeletionResult::RemovedFromLeaf {
+                                new_max_k_in_leaf: internal_leaf.key_vals.back().unwrap().0.clone()
+                            };
                         }
                         DeletionResult::NothingDeleted()
                     }
@@ -692,7 +701,12 @@ mod tests {
 
         let deletion = Node::delete_internal(&leaf, 2);
 
-        assert_eq!(deletion, DeletionResult::RemovedFromLeafNoBubble());
+        match deletion {
+            DeletionResult::RemovedFromLeaf { new_max_k_in_leaf } => {
+                assert_eq!(new_max_k_in_leaf.deref(), &1)
+            }
+            _ => panic!("bad return type for test")
+        }
 
         let leaf_ref = leaf.borrow();
 
@@ -764,7 +778,7 @@ mod tests {
     /*
     i.e. I can call this with ([2], [[1], [2, 3]]) and get a single link node with a single sep of 2 and the two expected child nodes
      */
-    fn build_node_tree(root: Vec<Rc<i32>>, leaves: Option<Vec<Vec<Rc<i32>>>>) -> Rc<RefCell<Node<i32, String>>>{
+    fn build_node_tree(root: Vec<Rc<i32>>, leaves: Option<Vec<Vec<Rc<i32>>>>) -> Rc<RefCell<Node<i32, String>>> {
         match leaves {
             None => create_leaf_with_rc_kvs(root),
             Some(leaves) => {
@@ -778,14 +792,13 @@ mod tests {
                         children: cloned_children,
                     }
                 }))
-            },
+            }
         }
     }
 
     fn create_leaf_with_rc_kvs(
         items: Vec<Rc<i32>>
     ) -> Rc<RefCell<Node<i32, String>>> {
-
         Rc::new(RefCell::new(Node::Leaf {
             internal_leaf: InternalLeaf {
                 key_vals: VecDeque::from_iter(items.into_iter().map(|k| {
@@ -809,5 +822,4 @@ mod tests {
             }
         }))
     }
-
 }

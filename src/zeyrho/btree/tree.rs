@@ -49,12 +49,28 @@ impl<K: Ord + Debug, V: Debug> BPlusTree<K, V> {
         }
     }
 
-    pub fn delete(&mut self, key: K) -> Result<V, ()> {
+    pub fn delete(&mut self, key: K) -> Result<(), ()> {
         if self.root.is_none() {
             Err(())
         } else {
             let internal_deletion = Node::delete_internal(&self.root.as_ref().unwrap().clone(), key);
             match internal_deletion {
+                DeletionResult::RemovedFromLeaf{
+                    new_max_k_in_leaf
+                } => todo!(),
+                DeletionResult::LeafNeedsBalancing() => {
+                    println!("balancing should only reach here if it is a leaf node");
+                    self.root.take();
+                    Ok(())
+                }
+                DeletionResult::RemovedFromLeafNeedsBubble{
+                    new_max_k_in_leaf
+                } => {
+                    println!("tree after delete: {}", self);
+                    println!("bubbling should not reach this high");
+                    Ok(())
+                }
+                DeletionResult::NoOperation() => Ok(()),
                 _ => {
                     todo!()
                 }
@@ -263,5 +279,43 @@ mod tests {
         } else {
             panic!("root is leaf node when it should be link node");
         }
+    }
+
+    #[test]
+    fn test_delete_only_key() {
+        let mut tree = create_tree();
+        tree.insert(3, 3.to_string());
+        _ = tree.delete(3);
+        assert!(tree.root.is_none());
+    }
+
+    #[test]
+    fn test_delete_only_key_in_left_node() {
+        let mut tree = create_tree();
+        for i in (0..DEGREE) {
+            tree.insert(i as i32, i.to_string());
+        }
+        println!("tree: {}", tree);
+        _ = tree.delete(0);
+        assert!(tree.root.is_some());
+        if let Node::Link {
+            internal_link
+        } = tree.root.unwrap().borrow().deref()
+        {
+            assert_eq!(internal_link.separators.len(), 1);
+            assert_eq!(internal_link.separators.first().unwrap().deref(), &2);
+
+        }
+    }
+
+    #[test]
+    fn test_delete_multi_level_tree() {
+        let mut tree = create_tree();
+        for i in (0..DEGREE + 2) {
+            tree.insert(i as i32, i.to_string());
+        }
+        println!("tree: {}", tree);
+        _ = tree.delete(0);
+        assert!(tree.root.is_none());
     }
 }
