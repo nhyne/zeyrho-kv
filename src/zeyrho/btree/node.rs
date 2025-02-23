@@ -504,6 +504,24 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                         match new_max_k_in_leaf {
                             None => {
                                 println!("we've emptied a node");
+                                /*
+                                this is even more complicated, if I empty a node and then that K is a separator then I can just "collapse" the link node...
+                                TODO: We need to steal at least 1 element from the parent, specifically the separator to the chile node we're deleting...
+                                always want to take the separator to the left of the child node, unless the child is the far left
+                                If we've deleted a node then we must have deleted a separator K because that's how we choose them....
+                                so we can just delete the child and the separator and then noop up....
+
+                                TODO: Should look at just merging nodes when we can't borrow from a neighbor...
+                                May end up being significantly simpler to implement
+                                Essentially just reorganizing the nodes and then setting the parent's child to be the new node
+                                 */
+
+                                // check to see if K is a separator - if it's not then we have a problem
+                                internal_link.separators.retain(|s| {!Rc::ptr_eq(s, &deleted_rc)});
+                                internal_link.children.retain(|c| {!Rc::ptr_eq(c, child_node)});
+
+                                // we may need to update a separator value for the parent,
+                                todo!()
                             }
                             Some(rc) => {
                                 println!("we have a new separator for this link");
