@@ -66,13 +66,6 @@ impl<K: Ord + Debug, V: Debug> BPlusTree<K, V> {
                         self.root.take();
                         Ok(())
                     }
-                    DeletionResult::RemovedFromLeafNeedsBubble{
-                        new_max_k_in_leaf, ..
-                    } => {
-                        println!("tree after delete: {}", self);
-                        println!("bubbling should not reach this high");
-                        Ok(())
-                    }
                     DeletionResult::NoOperation() => Ok(()),
                     DeletionResult::LinkNeedsBubble{link_needs_assistance, ..} => {
                         /*
@@ -345,7 +338,7 @@ mod tests {
     #[test]
     fn test_delete_multi_level_tree() {
         let mut tree = create_tree();
-        for i in (0..DEGREE + 2) {
+        for i in [1,3,4,5,6,7] {
             tree.insert(i as i32, i.to_string());
         }
         println!("tree: {}", tree);
