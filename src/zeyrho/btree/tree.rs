@@ -51,55 +51,147 @@ impl<K: Ord + Debug, V: Debug> BPlusTree<K, V> {
 
     pub fn delete(&mut self, key: K) -> Result<(), ()> {
         match &self.root {
-            None => {
-                Err(())
-            }
+            None => Err(()),
             Some(root_rc) => {
-
                 let internal_deletion = Node::delete_internal(&root_rc.clone(), key);
                 match internal_deletion {
-                    DeletionResult::RemovedFromLeaf{
-                        new_max_k_in_leaf, ..
-                    } => todo!(),
-                    DeletionResult::LeafNeedsBalancing{..} => {
-                        println!("balancing should only reach here if it is a leaf node");
-                        self.root.take();
-                        Ok(())
-                    }
-                    DeletionResult::NoOperation() => Ok(()),
-                    DeletionResult::LinkNeedsBubble{link_needs_assistance, ..} => {
-                        /*
-                        if a link needs bubbling here then we have to do one of a couple of things
-                        1. if we have one element then merge down with our right child
-                        2. if we have two elements then give the first separator to our left child and prop down
-                         */
-                        match &mut *root_rc.borrow_mut() {
-                            Node::Leaf { .. } => panic!("cannot bubble link if the root is a leaf"),
-                            Node::Link { internal_link } => {
-                                match internal_link.separators.len() {
-                                    1 => {
-                                        // here we merge downward
-                                        /*
-                                        check the neighboring links to see if there's an easy move?
-
-                                         */
-                                    }
-                                    _ => {
-                                        // here we can just hand off part of our slice
-                                        // the problem is how do we know which child needs the assistance?
-
-                                        // find the child link
-                                        let pos_of_child_needing_slice = internal_link.children.iter().position(|s| Rc::ptr_eq(s, &link_needs_assistance));
-                                        println!("child to assist: {:?}", pos_of_child_needing_slice);
-                                    }
+                    DeletionResult::RemovedFromLeaf { .. } => {
+                        // If we removed a key from a leaf, we need to check if the root needs updating
+                        let root_ref = root_rc.borrow();
+                        if let Node::Link { internal_link } = &*root_ref {
+                            if internal_link.separators.is_empty() {
+                                // If root has no separators, it should have exactly one child
+                                if internal_link.children.len() == 1 {
+                                    let new_root = internal_link.children[0].clone();
+                                    drop(root_ref); // Drop the borrow before modifying self.root
+                                    self.root = Some(new_root);
+                                } else {
+                                    panic!("Root link node with no separators should have exactly one child");
                                 }
                             }
                         }
-                        todo!()
+                        Ok(())
                     }
-                    _ => {
-                        todo!()
+                    DeletionResult::LeafNeedsBalancing { .. } => {
+                        // If we need to balance a leaf, we need to check if the root needs updating
+                        let root_ref = root_rc.borrow();
+                        if let Node::Link { internal_link } = &*root_ref {
+                            if internal_link.separators.is_empty() {
+                                // If root has no separators, it should have exactly one child
+                                if internal_link.children.len() == 1 {
+                                    let new_root = internal_link.children[0].clone();
+                                    drop(root_ref); // Drop the borrow before modifying self.root
+                                    self.root = Some(new_root);
+                                } else {
+                                    panic!("Root link node with no separators should have exactly one child");
+                                }
+                            }
+                        }
+                        Ok(())
                     }
+                    DeletionResult::NoOperation() => Ok(()),
+                    DeletionResult::LinkNeedsBubble { link_needs_assistance, .. } => {
+                        // If a link needs bubbling at the root level, we need to handle it specially
+                        let mut root_ref = root_rc.borrow_mut();
+                        match &mut *root_ref {
+                            Node::Leaf { .. } => panic!("Cannot bubble link if root is a leaf"),
+                            Node::Link { internal_link } => {
+                                match internal_link.separators.len() {
+                                    1 => {
+                                        // If root has only one separator, we need to merge with a child
+                                        let pos = internal_link.children.iter()
+                                            .position(|c| Rc::ptr_eq(c, &link_needs_assistance))
+                                            .unwrap();
+                                        
+                                        if pos > 0 {
+                                            // Merge with left child
+                                            let left_child = &internal_link.children[pos - 1];
+                                            let mut left_ref = left_child.borrow_mut();
+                                            let mut right_ref = link_needs_assistance.borrow_mut();
+                                            
+                                            match (&mut *left_ref, &mut *right_ref) {
+                                                (Node::Leaf { internal_leaf: left_leaf }, Node::Leaf { internal_leaf: right_leaf }) => {
+                                                    // Move all elements from right to left
+                                                    while !right_leaf.key_vals.is_empty() {
+                                                        let kv = right_leaf.key_vals.pop_front().unwrap();
+                                                        left_leaf.key_vals.push_back(kv);
+                                                    }
+                                                    
+                                                    // Update next/prev pointers
+                                                    left_leaf.next = right_leaf.next.take();
+                                                    if let Some(next) = &left_leaf.next {
+                                                        if let Some(next_upgrade) = next.upgrade() {
+                                                            let mut next_ref = next_upgrade.borrow_mut();
+                                                            if let Node::Leaf { internal_leaf } = &mut *next_ref {
+                                                                internal_leaf.prev = Some(Rc::downgrade(left_child));
+                                                            }
+                                                        }
+                                                    }
+                                                    
+                                                    // Remove the right child and its separator
+                                                    internal_link.children.remove(pos);
+                                                    internal_link.separators.remove(pos - 1);
+                                                }
+                                                _ => panic!("Expected leaf nodes when merging")
+                                            }
+                                        } else {
+                                            // Merge with right child
+                                            let right_child = &internal_link.children[pos + 1];
+                                            let mut left_ref = link_needs_assistance.borrow_mut();
+                                            let mut right_ref = right_child.borrow_mut();
+                                            
+                                            match (&mut *left_ref, &mut *right_ref) {
+                                                (Node::Leaf { internal_leaf: left_leaf }, Node::Leaf { internal_leaf: right_leaf }) => {
+                                                    // Move all elements from left to right
+                                                    while !left_leaf.key_vals.is_empty() {
+                                                        let kv = left_leaf.key_vals.pop_back().unwrap();
+                                                        right_leaf.key_vals.push_front(kv);
+                                                    }
+                                                    
+                                                    // Update next/prev pointers
+                                                    right_leaf.prev = left_leaf.prev.take();
+                                                    if let Some(prev) = &right_leaf.prev {
+                                                        if let Some(prev_upgrade) = prev.upgrade() {
+                                                            let mut prev_ref = prev_upgrade.borrow_mut();
+                                                            if let Node::Leaf { internal_leaf } = &mut *prev_ref {
+                                                                internal_leaf.next = Some(Rc::downgrade(right_child));
+                                                            }
+                                                        }
+                                                    }
+                                                    
+                                                    // Remove the left child and its separator
+                                                    internal_link.children.remove(pos);
+                                                    internal_link.separators.remove(pos);
+                                                }
+                                                _ => panic!("Expected leaf nodes when merging")
+                                            }
+                                        }
+                                        
+                                        // If we're left with no separators, the root should be replaced with its only child
+                                        if internal_link.separators.is_empty() {
+                                            if internal_link.children.len() == 1 {
+                                                let new_root = internal_link.children[0].clone();
+                                                drop(root_ref); // Drop the borrow before modifying self.root
+                                                self.root = Some(new_root);
+                                            } else {
+                                                panic!("Root link node with no separators should have exactly one child");
+                                            }
+                                        }
+                                    }
+                                    _ => {
+                                        // If root has more than one separator, we can just remove the child and separator
+                                        let pos = internal_link.children.iter()
+                                            .position(|c| Rc::ptr_eq(c, &link_needs_assistance))
+                                            .unwrap();
+                                        internal_link.children.remove(pos);
+                                        internal_link.separators.remove(pos);
+                                    }
+                                }
+                                Ok(())
+                            }
+                        }
+                    }
+                    DeletionResult::NothingDeleted() => Err(())
                 }
             }
         }

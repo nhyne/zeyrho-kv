@@ -33,10 +33,9 @@ pub(super) struct InternalLink<K: Ord + Debug, V: Debug> {
 
 #[derive(Debug)]
 pub(super) struct InternalLeaf<K: Ord + Debug, V: Debug> {
-    // TODO: Should these be Vec<Option<>>? It makes it a lot easier to know if we need to insert something new.
-    key_vals: VecDeque<(Rc<K>, V)>, // a leaf has DEGREE key vals
-    next: Option<Weak<RefCell<Node<K, V>>>>,
-    prev: Option<Weak<RefCell<Node<K, V>>>>,
+    pub(super) key_vals: VecDeque<(Rc<K>, V)>, // a leaf has DEGREE key vals
+    pub(super) next: Option<Weak<RefCell<Node<K, V>>>>,
+    pub(super) prev: Option<Weak<RefCell<Node<K, V>>>>,
 }
 
 impl<K: Debug + Ord, V: Debug> InternalLink<K, V> {
@@ -439,150 +438,282 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
         This is pretty gross, should I just wrap this in a deletion type?
      */
     pub(super) fn delete_internal(node: &Rc<RefCell<Node<K, V>>>, deleted_key: K) -> DeletionResult<K, V> {
-        // if link then see if any of the values make sense to continue searching -- I think this is always the case?
-        // if leaf then iterate through the K/Vs and delete if we get a match
         let mut node_ref = node.borrow_mut();
         match &mut *node_ref {
             Node::Link { internal_link } => {
-                // if the K value is a separator then we're going to need to fix that....
-                // if we end up deleting a value from a leaf then we need to children's biggest/smallest values
-                // should this only happen if the child node has the value? -- Yes
-
-                // find the child to look at
-                let child_to_delete_from_pos = internal_link.separators.iter().position(|s| deleted_key < *s.as_ref()).unwrap_or(internal_link.children.len() - 1);
+                // Find the child node that might contain the key to delete
+                let child_to_delete_from_pos = internal_link.separators.iter()
+                    .position(|s| deleted_key < *s.as_ref())
+                    .unwrap_or(internal_link.children.len() - 1);
                 let child_node = &internal_link.children[child_to_delete_from_pos];
                 let deleted_result = Self::delete_internal(child_node, deleted_key);
+
                 match deleted_result {
                     DeletionResult::LeafNeedsBalancing { deleted_rc } => {
                         let mut child_ref = child_node.borrow_mut();
                         match &mut *child_ref {
-                            // FIXME: use if let match here
                             Node::Leaf { internal_leaf } => {
                                 match (&internal_leaf.prev, &internal_leaf.next) {
-                                    // if we're looking at grabbing the neighbors elements we only try to grab the DIRECT neighbor's elements.
-                                    // we will not try and move further to the right or left -- runtime of this would be long
                                     (Some(p), Some(n)) => {
-                                        todo!()
+                                        // Both neighbors exist - choose the one with more elements
+                                        if let (Some(prev_node), Some(next_node)) = (p.upgrade(), n.upgrade()) {
+                                            let mut prev_ref = prev_node.borrow_mut();
+                                            let mut next_ref = next_node.borrow_mut();
+                                            
+                                            if let (Node::Leaf { internal_leaf: prev_leaf }, Node::Leaf { internal_leaf: next_leaf }) = (&mut *prev_ref, &mut *next_ref) {
+                                                // Choose the neighbor with more elements
+                                                if prev_leaf.key_vals.len() > next_leaf.key_vals.len() {
+                                                    // Steal from previous
+                                                    if prev_leaf.key_vals.len() - (MIN_ELEMENTS_IN_LEAF - internal_leaf.key_vals.len()) >= MIN_ELEMENTS_IN_LEAF {
+                                                        let stolen_kv = prev_leaf.key_vals.pop_back().unwrap();
+                                                        let new_separator = stolen_kv.0.clone();
+                                                        internal_leaf.key_vals.push_front(stolen_kv);
+                                                        
+                                                        // Update separator
+                                                        if let Some(pos) = internal_link.separators.iter().position(|s| Rc::ptr_eq(s, &deleted_rc)) {
+                                                            internal_link.separators[pos] = new_separator;
+                                                        }
+                                                        return DeletionResult::NoOperation();
+                                                    }
+                                                } else {
+                                                    // Steal from next
+                                                    if next_leaf.key_vals.len() - (MIN_ELEMENTS_IN_LEAF - internal_leaf.key_vals.len()) >= MIN_ELEMENTS_IN_LEAF {
+                                                        let stolen_kv = next_leaf.key_vals.pop_front().unwrap();
+                                                        let new_separator = stolen_kv.0.clone();
+                                                        internal_leaf.key_vals.push_back(stolen_kv);
+                                                        
+                                                        // Update separator
+                                                        if let Some(pos) = internal_link.separators.iter().position(|s| Rc::ptr_eq(s, &deleted_rc)) {
+                                                            internal_link.separators[pos] = new_separator;
+                                                        }
+                                                        return DeletionResult::NoOperation();
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        // If we get here, neither neighbor has enough elements
+                                        return DeletionResult::LinkNeedsBubble {
+                                            deleted_rc,
+                                            link_needs_assistance: node.clone(),
+                                        };
                                     }
                                     (Some(p), None) => {
-                                        if let Some(previous_neighbor) = p.upgrade() {
-                                            let mut prev_neighbor_ref = previous_neighbor.borrow_mut();
-                                            if let Node::Leaf { internal_leaf: neighbor_internal_leaf } = &mut *prev_neighbor_ref {
-                                                // the neighbor needs to have enough elements to share and not go under the minimum
-                                                if neighbor_internal_leaf.key_vals.len() - (MIN_ELEMENTS_IN_LEAF - internal_leaf.key_vals.len()) < MIN_ELEMENTS_IN_LEAF {
-                                                    return DeletionResult::LinkNeedsBubble {
-                                                        deleted_rc,
-                                                        link_needs_assistance: node.clone(),
-                                                        // new_max_k_in_leaf: internal_leaf.key_vals.back().map(|k| { k.0.clone() })
-                                                    };
+                                        // Only previous neighbor exists
+                                        if let Some(prev_node) = p.upgrade() {
+                                            let mut prev_ref = prev_node.borrow_mut();
+                                            if let Node::Leaf { internal_leaf: prev_leaf } = &mut *prev_ref {
+                                                if prev_leaf.key_vals.len() - (MIN_ELEMENTS_IN_LEAF - internal_leaf.key_vals.len()) >= MIN_ELEMENTS_IN_LEAF {
+                                                    let stolen_kv = prev_leaf.key_vals.pop_back().unwrap();
+                                                    let new_separator = stolen_kv.0.clone();
+                                                    internal_leaf.key_vals.push_front(stolen_kv);
+                                                    
+                                                    // Update separator
+                                                    if let Some(pos) = internal_link.separators.iter().position(|s| Rc::ptr_eq(s, &deleted_rc)) {
+                                                        internal_link.separators[pos] = new_separator;
+                                                    }
+                                                    return DeletionResult::NoOperation();
                                                 }
-                                                let stolen_kv = neighbor_internal_leaf.key_vals.pop_back().unwrap();
-                                                let new_k_for_link = stolen_kv.0.clone();
-                                                internal_leaf.key_vals.push_front(stolen_kv);
-
-                                                internal_link.separators[0] = new_k_for_link;
                                             }
                                         }
-                                        DeletionResult::NoOperation()
+                                        return DeletionResult::LinkNeedsBubble {
+                                            deleted_rc,
+                                            link_needs_assistance: node.clone(),
+                                        };
                                     }
                                     (None, Some(n)) => {
-                                        if let Some(next_neighbor) = n.upgrade() {
-                                            let mut next_neighbor_ref = next_neighbor.borrow_mut();
-                                            if let Node::Leaf { internal_leaf: neighbor_internal_leaf } = &mut *next_neighbor_ref {
-                                                // the neighbor needs to have enough elements to share and not go under the minimum
-                                                if neighbor_internal_leaf.key_vals.len() - (MIN_ELEMENTS_IN_LEAF - internal_leaf.key_vals.len()) < MIN_ELEMENTS_IN_LEAF {
-                                                    println!("not enough elements in neighbor, returning needs bubble");
-                                                    return DeletionResult::LinkNeedsBubble {
-                                                        deleted_rc,
-                                                        link_needs_assistance: node.clone(),
-                                                        // new_max_k_in_leaf: internal_leaf.key_vals.back().map(|k| { k.0.clone() })
-                                                    };
+                                        // Only next neighbor exists
+                                        if let Some(next_node) = n.upgrade() {
+                                            let mut next_ref = next_node.borrow_mut();
+                                            if let Node::Leaf { internal_leaf: next_leaf } = &mut *next_ref {
+                                                if next_leaf.key_vals.len() - (MIN_ELEMENTS_IN_LEAF - internal_leaf.key_vals.len()) >= MIN_ELEMENTS_IN_LEAF {
+                                                    let stolen_kv = next_leaf.key_vals.pop_front().unwrap();
+                                                    let new_separator = stolen_kv.0.clone();
+                                                    internal_leaf.key_vals.push_back(stolen_kv);
+                                                    
+                                                    // Update separator
+                                                    if let Some(pos) = internal_link.separators.iter().position(|s| Rc::ptr_eq(s, &deleted_rc)) {
+                                                        internal_link.separators[pos] = new_separator;
+                                                    }
+                                                    return DeletionResult::NoOperation();
                                                 }
-                                                let stolen_kv = neighbor_internal_leaf.key_vals.pop_front().unwrap();
-                                                let cloned_k = stolen_kv.0.clone();
-                                                internal_leaf.key_vals.push_back(stolen_kv);
-
-                                                let new_k_for_link = neighbor_internal_leaf.key_vals.front().map(|(k, _)| { k.clone() }).unwrap();
-                                                let swap_pos = internal_link.separators.iter().position(|sep| {
-                                                    Rc::ptr_eq(sep, &cloned_k)
-                                                });
-                                                if let Some(pos) = swap_pos {
-                                                    internal_link.separators[pos] = new_k_for_link;
-                                                };
                                             }
                                         }
-                                        println!("did some stuff but still need bubble");
-                                        DeletionResult::NoOperation()
+                                        return DeletionResult::LinkNeedsBubble {
+                                            deleted_rc,
+                                            link_needs_assistance: node.clone(),
+                                        };
                                     }
                                     (None, None) => {
-                                        println!("the tree can only be empty in this case");
-                                        panic!("I don't want to panic here but I want to confirm this is true")
-                                        //DeletionResult::EmptiedNode()
+                                        // No neighbors - this should only happen if we're the only node
+                                        return DeletionResult::LinkNeedsBubble {
+                                            deleted_rc,
+                                            link_needs_assistance: node.clone(),
+                                        };
                                     }
                                 }
                             }
-                            _ => panic!("can never happen")
+                            _ => panic!("LeafNeedsBalancing should only be returned for leaf nodes")
                         }
                     }
-                    d @ DeletionResult::RemovedFromLeaf { .. } => d,
-                    // DeletionResult::RemovedFromLeafNeedsBubble { deleted_rc, new_max_k_in_leaf } => {
-                    //     println!("now the parent link of the deleted node needs to figure out what to do");
-                    //     /*
-                    //     There are two cases I can think of that are worth looking at here:
-                    //     1. when the link node we're looking at has more than one separator
-                    //         if we have more than one we can break the whole link node down and remove one separator
-                    //     2. when the link node has a single separator -- this case is going to be much more difficult b/c we need to keep going up the tree to balance
-                    //      */
-                    //     match new_max_k_in_leaf {
-                    //         None => {
-                    //             println!("we've emptied a node");
-                    //             /*
-                    //             this is even more complicated, if I empty a node and then that K is a separator then I can just "collapse" the link node...
-                    //             TODO: We need to steal at least 1 element from the parent, specifically the separator to the chile node we're deleting...
-                    //             always want to take the separator to the left of the child node, unless the child is the far left
-                    //             If we've deleted a node then we must have deleted a separator K because that's how we choose them....
-                    //             so we can just delete the child and the separator and then noop up....
-                    //
-                    //             TODO: Should look at just merging nodes when we can't borrow from a neighbor...
-                    //             May end up being significantly simpler to implement
-                    //             Essentially just reorganizing the nodes and then setting the parent's child to be the new node
-                    //              */
-                    //
-                    //             // check to see if K is a separator - if it's not then we have a problem
-                    //             internal_link.separators.retain(|s| {!Rc::ptr_eq(s, &deleted_rc)});
-                    //             internal_link.children.retain(|c| {!Rc::ptr_eq(c, child_node)});
-                    //
-                    //             // we may need to update a separator value for the parent,
-                    //             todo!()
-                    //         }
-                    //         Some(rc) => {
-                    //             println!("we have a new separator for this link");
-                    //             let pos_sep_to_swap = internal_link.separators.iter().position(|s| Rc::ptr_eq(s, &rc)).unwrap();
-                    //             internal_link.separators[pos_sep_to_swap] = rc;
-                    //         }
-                    //     }
-                    //     match internal_link.separators.len() {
-                    //         1 => {
-                    //             println!("this is the hard case and we need to bubble again");
-                    //             println!("we'll start by stealing a single separator from the parent");
-                    //             return DeletionResult::LinkNeedsBubble{
-                    //                 deleted_rc,
-                    //                 link_needs_assistance: child_node.clone()
-                    //             };
-                    //         }
-                    //         more_than_one => {}
-                    //     }
-                    //     todo!();
-                    // }
+                    DeletionResult::RemovedFromLeaf { deleted_rc, new_max_k_in_leaf } => {
+                        // Update separator if the deleted key was a separator
+                        if let Some(pos) = internal_link.separators.iter().position(|s| Rc::ptr_eq(s, &deleted_rc)) {
+                            let new_max_k_in_leaf_clone = new_max_k_in_leaf.clone();
+                            if let Some(new_max) = new_max_k_in_leaf {
+                                internal_link.separators[pos] = new_max;
+                            } else {
+                                // If no new max, we need to remove this separator and its child
+                                internal_link.separators.remove(pos);
+                                internal_link.children.remove(pos);
+                                
+                                // If this leaves us with too few separators, we need to bubble up
+                                if internal_link.separators.len() < MIN_ELEMENTS_IN_LEAF {
+                                    return DeletionResult::LinkNeedsBubble {
+                                        deleted_rc: deleted_rc.clone(),
+                                        link_needs_assistance: node.clone(),
+                                    };
+                                }
+                            }
+                            DeletionResult::RemovedFromLeaf {
+                                deleted_rc: deleted_rc.clone(),
+                                new_max_k_in_leaf: new_max_k_in_leaf_clone,
+                            }
+                        } else {
+                            DeletionResult::RemovedFromLeaf {
+                                deleted_rc: deleted_rc.clone(),
+                                new_max_k_in_leaf: new_max_k_in_leaf.clone(),
+                            }
+                        }
+                    }
                     DeletionResult::LinkNeedsBubble { deleted_rc, link_needs_assistance } => {
-                        // here we need to merge some nodes
-
-                        todo!()
+                        // If a link needs bubbling at the root level, we need to handle it specially
+                        let mut root_ref = node.borrow_mut();
+                        match &mut *root_ref {
+                            Node::Leaf { .. } => panic!("Cannot bubble link if root is a leaf"),
+                            Node::Link { internal_link } => {
+                                match internal_link.separators.len() {
+                                    1 => {
+                                        // If root has only one separator, we need to merge with a child
+                                        let pos = internal_link.children.iter()
+                                            .position(|c| Rc::ptr_eq(c, &link_needs_assistance))
+                                            .unwrap();
+                                        
+                                        if pos > 0 {
+                                            // Clone the nodes we need before dropping the borrow
+                                            let left_child = internal_link.children[pos - 1].clone();
+                                            let right_child = link_needs_assistance.clone();
+                                            
+                                            // Drop the borrow before modifying nodes
+                                            drop(root_ref);
+                                            
+                                            let mut left_ref = left_child.borrow_mut();
+                                            let mut right_ref = right_child.borrow_mut();
+                                            
+                                            match (&mut *left_ref, &mut *right_ref) {
+                                                (Node::Leaf { internal_leaf: left_leaf }, Node::Leaf { internal_leaf: right_leaf }) => {
+                                                    // Move all elements from right to left
+                                                    while !right_leaf.key_vals.is_empty() {
+                                                        let kv = right_leaf.key_vals.pop_front().unwrap();
+                                                        left_leaf.key_vals.push_back(kv);
+                                                    }
+                                                    
+                                                    // Update next/prev pointers
+                                                    left_leaf.next = right_leaf.next.take();
+                                                    if let Some(next) = &left_leaf.next {
+                                                        if let Some(next_upgrade) = next.upgrade() {
+                                                            let mut next_ref = next_upgrade.borrow_mut();
+                                                            if let Node::Leaf { internal_leaf } = &mut *next_ref {
+                                                                internal_leaf.prev = Some(Rc::downgrade(&left_child));
+                                                            }
+                                                        }
+                                                    }
+                                                    
+                                                    // Drop the node borrows before modifying internal_link
+                                                    drop(left_ref);
+                                                    drop(right_ref);
+                                                    
+                                                    // Now we can safely modify internal_link
+                                                    let mut root_ref = root_ref;
+                                                    if let Node::Link { internal_link } = &mut *root_ref {
+                                                        internal_link.children.remove(pos);
+                                                        internal_link.separators.remove(pos - 1);
+                                                    }
+                                                }
+                                                _ => panic!("Expected leaf nodes when merging")
+                                            }
+                                        } else {
+                                            // Clone the nodes we need before dropping the borrow
+                                            let left_child = link_needs_assistance.clone();
+                                            let right_child = internal_link.children[pos + 1].clone();
+                                            
+                                            // Drop the borrow before modifying nodes
+                                            drop(root_ref);
+                                            
+                                            let mut left_ref = left_child.borrow_mut();
+                                            let mut right_ref = right_child.borrow_mut();
+                                            
+                                            match (&mut *left_ref, &mut *right_ref) {
+                                                (Node::Leaf { internal_leaf: left_leaf }, Node::Leaf { internal_leaf: right_leaf }) => {
+                                                    // Move all elements from left to right
+                                                    while !left_leaf.key_vals.is_empty() {
+                                                        let kv = left_leaf.key_vals.pop_back().unwrap();
+                                                        right_leaf.key_vals.push_front(kv);
+                                                    }
+                                                    
+                                                    // Update next/prev pointers
+                                                    right_leaf.prev = left_leaf.prev.take();
+                                                    if let Some(prev) = &right_leaf.prev {
+                                                        if let Some(prev_upgrade) = prev.upgrade() {
+                                                            let mut prev_ref = prev_upgrade.borrow_mut();
+                                                            if let Node::Leaf { internal_leaf } = &mut *prev_ref {
+                                                                internal_leaf.next = Some(Rc::downgrade(&right_child));
+                                                            }
+                                                        }
+                                                    }
+                                                    
+                                                    // Drop the node borrows before modifying internal_link
+                                                    drop(left_ref);
+                                                    drop(right_ref);
+                                                    
+                                                    // Now we can safely modify internal_link
+                                                    let mut root_ref = root_ref;
+                                                    if let Node::Link { internal_link } = &mut *root_ref {
+                                                        internal_link.children.remove(pos);
+                                                        internal_link.separators.remove(pos);
+                                                    }
+                                                }
+                                                _ => panic!("Expected leaf nodes when merging")
+                                            }
+                                        }
+                                        
+                                        // Check if we need to update the root
+                                        let root_ref = root_ref;
+                                        if let Node::Link { internal_link } = &*root_ref {
+                                            if internal_link.separators.is_empty() {
+                                                if internal_link.children.len() == 1 {
+                                                    let new_root = internal_link.children[0].clone();
+                                                    drop(root_ref);
+                                                    self.root = Some(new_root);
+                                                } else {
+                                                    panic!("Root link node with no separators should have exactly one child");
+                                                }
+                                            }
+                                        }
+                                    }
+                                    _ => {
+                                        // If root has more than one separator, we can just remove the child and separator
+                                        let pos = internal_link.children.iter()
+                                            .position(|c| Rc::ptr_eq(c, &link_needs_assistance))
+                                            .unwrap();
+                                        internal_link.children.remove(pos);
+                                        internal_link.separators.remove(pos);
+                                    }
+                                }
+                                Ok(())
+                            }
+                        }
                     }
-                    _ => {
-                        println!("reached the catch all case");
-                        todo!()
-                    }
+                    _ => deleted_result
                 }
             }
             Node::Leaf { internal_leaf, .. } => {
@@ -590,31 +721,21 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
                 let rc_to_delete = internal_leaf.key_vals.iter().find(|(k, _)| *k.as_ref() == deleted_key);
 
                 match rc_to_delete {
-                    None => {
-                        DeletionResult::NothingDeleted()
-                    }
+                    None => DeletionResult::NothingDeleted(),
                     Some((rc, _)) => {
                         let deleted_rc: Rc<K> = rc.clone();
                         internal_leaf.key_vals.retain(|(k, _)| *k.as_ref() != deleted_key);
                         let new_size = internal_leaf.key_vals.len();
-                        match internal_leaf.key_vals.len() as i32 {
-                            MIN_ELEMENTS_IN_LEAF_MINUS_ONE => {
-                                println!("we need to re-balance here");
-                                DeletionResult::LeafNeedsBalancing {
-                                    deleted_rc
-                                }
+                        
+                        if new_size < MIN_ELEMENTS_IN_LEAF as usize {
+                            DeletionResult::LeafNeedsBalancing { deleted_rc }
+                        } else if original_size != new_size {
+                            DeletionResult::RemovedFromLeaf {
+                                deleted_rc,
+                                new_max_k_in_leaf: internal_leaf.key_vals.back().map(|k| k.0.clone()),
                             }
-                            _ => {
-                                if original_size != new_size {
-                                    println!("we removed an element");
-                                    // FIXME: What if the deleted key is a separator somewhere? We have to remove that....
-                                    return DeletionResult::RemovedFromLeaf {
-                                        deleted_rc,
-                                        new_max_k_in_leaf: internal_leaf.key_vals.back().map(|k| { k.0.clone() }),
-                                    };
-                                }
-                                DeletionResult::NothingDeleted()
-                            }
+                        } else {
+                            DeletionResult::NothingDeleted()
                         }
                     }
                 }
