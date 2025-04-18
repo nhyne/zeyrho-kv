@@ -451,197 +451,196 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
 
         This is pretty gross, should I just wrap this in a deletion type?
      */
-    // pub(super) fn delete_internal(node: &Rc<RefCell<Node<K, V>>>, key: K) -> DeletionResult<K, V> {
-    //     todo!();
-    //     let mut node_ref = node.borrow_mut();
-    //     match &mut *node_ref {
-    //         Node::Leaf { internal_leaf } => {
-    //             // Try to find and remove the key
-    //             let pos = internal_leaf.key_vals.iter()
-    //                 .position(|(k, _)| k.as_ref() == &key);
-    //
-    //             match pos {
-    //                 None => DeletionResult::KeyNotFound,
-    //                 Some(pos) => {
-    //                     internal_leaf.key_vals.remove(pos);
-    //
-    //                     // Check if we need to rebalance
-    //                     if internal_leaf.key_vals.len() < MIN_ELEMENTS_IN_LEAF {
-    //                         // Try to borrow from left sibling first
-    //                         if let Some(prev) = internal_leaf.prev.as_ref().and_then(|p| p.upgrade()) {
-    //                             let mut prev_ref = prev.borrow_mut();
-    //                             if let Node::Leaf { internal_leaf: prev_leaf } = &mut *prev_ref {
-    //                                 if prev_leaf.key_vals.len() > MIN_ELEMENTS_IN_LEAF {
-    //                                     return DeletionResult::NeedsBorrow {
-    //                                         node: node.clone(),
-    //                                         sibling: prev,
-    //                                         is_left_sibling: true,
-    //                                     };
-    //                                 }
-    //                             }
-    //                         }
-    //
-    //                         // Try to borrow from right sibling
-    //                         if let Some(next) = internal_leaf.next.as_ref().and_then(|n| n.upgrade()) {
-    //                             let mut next_ref = next.borrow_mut();
-    //                             if let Node::Leaf { internal_leaf: next_leaf } = &mut *next_ref {
-    //                                 if next_leaf.key_vals.len() > MIN_ELEMENTS_IN_LEAF {
-    //                                     return DeletionResult::NeedsBorrow {
-    //                                         node: node.clone(),
-    //                                         sibling: next,
-    //                                         is_left_sibling: false,
-    //                                     };
-    //                                 }
-    //                             }
-    //                         }
-    //
-    //                         // If we can't borrow, try to merge
-    //                         if let Some(prev) = internal_leaf.prev.as_ref().and_then(|p| p.upgrade()) {
-    //                             return DeletionResult::NeedsMerge {
-    //                                 node: node.clone(),
-    //                                 sibling: prev,
-    //                                 is_left_sibling: true,
-    //                                 separator: internal_leaf.key_vals.front()
-    //                                     .map(|(k, _)| k.clone())
-    //                                     .unwrap(),
-    //                             };
-    //                         }
-    //
-    //                         if let Some(next) = internal_leaf.next.as_ref().and_then(|n| n.upgrade()) {
-    //                             return DeletionResult::NeedsMerge {
-    //                                 node: node.clone(),
-    //                                 sibling: next,
-    //                                 is_left_sibling: false,
-    //                                 separator: internal_leaf.key_vals.back()
-    //                                     .map(|(k, _)| k.clone())
-    //                                     .unwrap(),
-    //                             };
-    //                         }
-    //                     }
-    //
-    //                     DeletionResult::Deleted
-    //                 }
-    //             }
-    //         }
-    //         Node::Link { internal_link } => {
-    //             // Find the child to search in
-    //             let child_pos = internal_link.separators.iter()
-    //                 .position(|k| k.as_ref() > &key)
-    //                 .unwrap_or(internal_link.children.len() - 1);
-    //
-    //             let child = internal_link.children[child_pos].clone();
-    //             let result = Self::delete_internal(&child, key);
-    //
-    //             match result {
-    //                 DeletionResult::KeyNotFound => DeletionResult::KeyNotFound,
-    //                 DeletionResult::Deleted => {
-    //                     // Check if we need to rebalance the child
-    //                     if child.borrow().is_underflowing() {
-    //                         // Try to borrow from left sibling first
-    //                         if child_pos > 0 {
-    //                             let left_sibling = internal_link.children[child_pos - 1].clone();
-    //                             let mut left_ref = left_sibling.borrow_mut();
-    //                             if !left_ref.is_underflowing() {
-    //                                 return DeletionResult::NeedsBorrow {
-    //                                     node: child,
-    //                                     sibling: left_sibling,
-    //                                     is_left_sibling: true,
-    //                                 };
-    //                             }
-    //                         }
-    //
-    //                         // Try to borrow from right sibling
-    //                         if child_pos < internal_link.children.len() - 1 {
-    //                             let right_sibling = internal_link.children[child_pos + 1].clone();
-    //                             let mut right_ref = right_sibling.borrow_mut();
-    //                             if !right_ref.is_underflowing() {
-    //                                 return DeletionResult::NeedsBorrow {
-    //                                     node: child,
-    //                                     sibling: right_sibling,
-    //                                     is_left_sibling: false,
-    //                                 };
-    //                             }
-    //                         }
-    //
-    //                         // If we can't borrow, try to merge
-    //                         if child_pos > 0 {
-    //                             let left_sibling = internal_link.children[child_pos - 1].clone();
-    //                             return DeletionResult::NeedsMerge {
-    //                                 node: child,
-    //                                 sibling: left_sibling,
-    //                                 is_left_sibling: true,
-    //                                 separator: internal_link.separators[child_pos - 1].clone(),
-    //                             };
-    //                         }
-    //
-    //                         if child_pos < internal_link.children.len() - 1 {
-    //                             let right_sibling = internal_link.children[child_pos + 1].clone();
-    //                             return DeletionResult::NeedsMerge {
-    //                                 node: child,
-    //                                 sibling: right_sibling,
-    //                                 is_left_sibling: false,
-    //                                 separator: internal_link.separators[child_pos].clone(),
-    //                             };
-    //                         }
-    //                     }
-    //
-    //                     DeletionResult::Deleted
-    //                 }
-    //                 DeletionResult::NeedsBorrow { node, sibling, is_left_sibling } => {
-    //                     let mut node_ref = node.borrow_mut();
-    //                     let mut sibling_ref = sibling.borrow_mut();
-    //
-    //                     if let Some(new_separator) = node_ref.borrow_from_sibling(&mut *sibling_ref, is_left_sibling) {
-    //                         // Update the separator in the parent
-    //                         let sep_pos = if is_left_sibling {
-    //                             child_pos - 1
-    //                         } else {
-    //                             child_pos
-    //                         };
-    //                         internal_link.separators[sep_pos] = new_separator;
-    //                     }
-    //
-    //                     DeletionResult::Deleted
-    //                 }
-    //                 DeletionResult::NeedsMerge { node, sibling, is_left_sibling, separator } => {
-    //                     let mut node_ref = node.borrow_mut();
-    //                     let mut sibling_ref = sibling.borrow_mut();
-    //
-    //                     node_ref.merge_with_sibling(&mut *sibling_ref, separator, is_left_sibling);
-    //
-    //                     // Remove the separator and child from the parent
-    //                     let sep_pos = if is_left_sibling {
-    //                         child_pos - 1
-    //                     } else {
-    //                         child_pos
-    //                     };
-    //                     internal_link.separators.remove(sep_pos);
-    //                     internal_link.children.remove(sep_pos + 1);
-    //
-    //                     DeletionResult::Deleted
-    //                 }
-    //                 DeletionResult::ReplaceInternal { node, key, use_predecessor } => {
-    //                     // Find the predecessor or successor
-    //                     let replacement = if use_predecessor {
-    //                         node.borrow().get_predecessor(&key)
-    //                     } else {
-    //                         node.borrow().get_successor(&key)
-    //                     };
-    //
-    //                     if let Some((new_key, _)) = replacement {
-    //                         // Replace the key in the internal node
-    //                         let pos = internal_link.separators.iter()
-    //                             .position(|k| k.as_ref() == &key)
-    //                             .unwrap();
-    //                         internal_link.separators[pos] = new_key;
-    //                     }
-    //
-    //                     DeletionResult::Deleted
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
+    pub(super) fn delete_internal(node: &Rc<RefCell<Node<K, V>>>, key: K) -> DeletionResult<K, V> {
+        let mut node_ref = node.borrow_mut();
+        match &mut *node_ref {
+            Node::Leaf { internal_leaf } => {
+                // Try to find and remove the key
+                let pos = internal_leaf.key_vals.iter()
+                    .position(|(k, _)| k.as_ref() == &key);
+
+                match pos {
+                    None => DeletionResult::KeyNotFound,
+                    Some(pos) => {
+                        internal_leaf.key_vals.remove(pos);
+
+                        // Check if we need to rebalance
+                        if internal_leaf.key_vals.len() < MIN_ELEMENTS_IN_LEAF {
+                            // Try to borrow from left sibling first
+                            if let Some(prev) = internal_leaf.prev.as_ref().and_then(|p| p.upgrade()) {
+                                let mut prev_ref = prev.borrow_mut();
+                                if let Node::Leaf { internal_leaf: prev_leaf } = &mut *prev_ref {
+                                    if prev_leaf.key_vals.len() > MIN_ELEMENTS_IN_LEAF {
+                                        return DeletionResult::NeedsBorrow {
+                                            node: node.clone(),
+                                            sibling: prev.clone(),
+                                            is_left_sibling: true,
+                                        };
+                                    }
+                                }
+                            }
+
+                            // Try to borrow from right sibling
+                            if let Some(next) = internal_leaf.next.as_ref().and_then(|n| n.upgrade()) {
+                                let mut next_ref = next.borrow_mut();
+                                if let Node::Leaf { internal_leaf: next_leaf } = &mut *next_ref {
+                                    if next_leaf.key_vals.len() > MIN_ELEMENTS_IN_LEAF {
+                                        return DeletionResult::NeedsBorrow {
+                                            node: node.clone(),
+                                            sibling: next.clone(),
+                                            is_left_sibling: false,
+                                        };
+                                    }
+                                }
+                            }
+
+                            // If we can't borrow, try to merge
+                            if let Some(prev) = internal_leaf.prev.as_ref().and_then(|p| p.upgrade()) {
+                                return DeletionResult::NeedsMerge {
+                                    node: node.clone(),
+                                    sibling: prev.clone(),
+                                    is_left_sibling: true,
+                                    separator: internal_leaf.key_vals.front()
+                                        .map(|(k, _)| k.clone())
+                                        .unwrap(),
+                                };
+                            }
+
+                            if let Some(next) = internal_leaf.next.as_ref().and_then(|n| n.upgrade()) {
+                                return DeletionResult::NeedsMerge {
+                                    node: node.clone(),
+                                    sibling: next.clone(),
+                                    is_left_sibling: false,
+                                    separator: internal_leaf.key_vals.back()
+                                        .map(|(k, _)| k.clone())
+                                        .unwrap(),
+                                };
+                            }
+                        }
+
+                        DeletionResult::Deleted
+                    }
+                }
+            }
+            Node::Link { internal_link } => {
+                // Find the child to search in
+                let child_pos = internal_link.separators.iter()
+                    .position(|k| k.as_ref() > &key)
+                    .unwrap_or(internal_link.children.len() - 1);
+
+                let child = internal_link.children[child_pos].clone();
+                let result = Self::delete_internal(&child, key);
+
+                match result {
+                    DeletionResult::KeyNotFound => DeletionResult::KeyNotFound,
+                    DeletionResult::Deleted => {
+                        // Check if we need to rebalance the child
+                        if child.borrow().is_underflowing() {
+                            // Try to borrow from left sibling first
+                            if child_pos > 0 {
+                                let left_sibling = internal_link.children[child_pos - 1].clone();
+                                let mut left_ref = left_sibling.borrow_mut();
+                                if !left_ref.is_underflowing() {
+                                    return DeletionResult::NeedsBorrow {
+                                        node: child,
+                                        sibling: left_sibling.clone(),
+                                        is_left_sibling: true,
+                                    };
+                                }
+                            }
+
+                            // Try to borrow from right sibling
+                            if child_pos < internal_link.children.len() - 1 {
+                                let right_sibling = internal_link.children[child_pos + 1].clone();
+                                let mut right_ref = right_sibling.borrow_mut();
+                                if !right_ref.is_underflowing() {
+                                    return DeletionResult::NeedsBorrow {
+                                        node: child,
+                                        sibling: right_sibling.clone(),
+                                        is_left_sibling: false,
+                                    };
+                                }
+                            }
+
+                            // If we can't borrow, try to merge
+                            if child_pos > 0 {
+                                let left_sibling = internal_link.children[child_pos - 1].clone();
+                                return DeletionResult::NeedsMerge {
+                                    node: child,
+                                    sibling: left_sibling.clone(),
+                                    is_left_sibling: true,
+                                    separator: internal_link.separators[child_pos - 1].clone(),
+                                };
+                            }
+
+                            if child_pos < internal_link.children.len() - 1 {
+                                let right_sibling = internal_link.children[child_pos + 1].clone();
+                                return DeletionResult::NeedsMerge {
+                                    node: child,
+                                    sibling: right_sibling.clone(),
+                                    is_left_sibling: false,
+                                    separator: internal_link.separators[child_pos].clone(),
+                                };
+                            }
+                        }
+
+                        DeletionResult::Deleted
+                    }
+                    DeletionResult::NeedsBorrow { node, sibling, is_left_sibling } => {
+                        let mut node_ref = node.borrow_mut();
+                        let mut sibling_ref = sibling.borrow_mut();
+
+                        if let Some(new_separator) = node_ref.borrow_from_sibling(&mut *sibling_ref, is_left_sibling) {
+                            // Update the separator in the parent
+                            let sep_pos = if is_left_sibling {
+                                child_pos - 1
+                            } else {
+                                child_pos
+                            };
+                            internal_link.separators[sep_pos] = new_separator;
+                        }
+
+                        DeletionResult::Deleted
+                    }
+                    DeletionResult::NeedsMerge { node, sibling, is_left_sibling, separator } => {
+                        let mut node_ref = node.borrow_mut();
+                        let mut sibling_ref = sibling.borrow_mut();
+
+                        node_ref.merge_with_sibling(&mut *sibling_ref, separator, is_left_sibling);
+
+                        // Remove the separator and child from the parent
+                        let sep_pos = if is_left_sibling {
+                            child_pos - 1
+                        } else {
+                            child_pos
+                        };
+                        internal_link.separators.remove(sep_pos);
+                        internal_link.children.remove(sep_pos + 1);
+
+                        DeletionResult::Deleted
+                    }
+                    DeletionResult::ReplaceInternal { node, key, use_predecessor } => {
+                        // Find the predecessor or successor
+                        let replacement = if use_predecessor {
+                            node.borrow().get_predecessor(&key)
+                        } else {
+                            node.borrow().get_successor(&key)
+                        };
+
+                        if let Some(new_key) = replacement {
+                            // Replace the key in the internal node
+                            let pos = internal_link.separators.iter()
+                                .position(|k: &Rc<K>| k.as_ref() == key.as_ref())
+                                .unwrap();
+                            internal_link.separators[pos] = new_key;
+                        }
+
+                        DeletionResult::Deleted
+                    }
+                }
+            }
+        }
+    }
 
     // Helper to check if a node is underflowing (has too few keys)
     fn is_underflowing(&self) -> bool {
@@ -652,7 +651,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
     }
 
     // Helper to get the predecessor of a key in a leaf node
-    fn get_predecessor(&self, key: &K) -> Option<Rc<K>> {
+    pub (super) fn get_predecessor(&self, key: &K) -> Option<Rc<K>> {
         match self {
             Node::Leaf { internal_leaf } => {
                 let pos = internal_leaf.key_vals.iter()
@@ -669,7 +668,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
     }
 
     // Helper to get the successor of a key in a leaf node
-    fn get_successor(&self, key: &K) -> Option<Rc<K>> {
+    pub (super) fn get_successor(&self, key: &K) -> Option<Rc<K>> {
         match self {
             Node::Leaf { internal_leaf } => {
                 let pos = internal_leaf.key_vals.iter()
@@ -686,7 +685,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
     }
 
     // Helper to borrow a key from a sibling
-    fn borrow_from_sibling(
+    pub (super) fn borrow_from_sibling(
         &mut self,
         sibling: &mut Node<K, V>,
         is_left_sibling: bool,
@@ -741,7 +740,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
     }
 
     // Helper to merge two nodes
-    fn merge_with_sibling(
+    pub (super) fn merge_with_sibling(
         &mut self,
         sibling: &mut Node<K, V>,
         separator: Rc<K>,
