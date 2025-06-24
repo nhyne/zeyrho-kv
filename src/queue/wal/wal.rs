@@ -20,8 +20,6 @@ pub trait Wal {
     fn read(&self, offset: usize) -> Result<Vec<u8>, std::io::Error>;
 
     fn size(&self) -> Result<usize, std::io::Error>;
-
-    fn flush(&mut self) -> Result<(), std::io::Error>;
 }
 
 impl Wal for FileWal {
@@ -31,6 +29,11 @@ impl Wal for FileWal {
             data: Bytes::from(record.to_vec()),
         };
         self.uncommitted.push(entry);
+        
+        if self.uncommitted.len() > 1000 {
+            self.flush()?;
+        }
+        
         self.offset += record.len();
         self.size += 1;
         Ok(())
@@ -57,17 +60,20 @@ impl Wal for FileWal {
         Ok(self.size)
     }
 
+}
+
+impl FileWal {
     fn flush(&mut self) -> Result<(), std::io::Error> {
         for entry in &self.uncommitted {
             self.wal_file.write_all(&entry.data)?;
         }
+        self.wal_file.flush()?;
         self.uncommitted.clear();
         self.metadata_file.set_len(0)?;
         self.metadata_file.write(&self.offset.to_ne_bytes())?;
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 mod tests {
