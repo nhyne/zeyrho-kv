@@ -62,6 +62,8 @@ impl Wal for FileWal {
             self.wal_file.write_all(&entry.data)?;
         }
         self.uncommitted.clear();
+        self.metadata_file.set_len(0)?;
+        self.metadata_file.write(&self.offset.to_ne_bytes())?;
         Ok(())
     }
 }
@@ -73,7 +75,7 @@ mod tests {
     use tempfile::tempfile;
 
     #[test]
-    fn test_file_wal() {
+    fn test_simple_write() {
         let mut wal = FileWal {
             wal_file: tempfile().unwrap(),
             metadata_file: tempfile().unwrap(),
@@ -87,5 +89,25 @@ mod tests {
         assert_eq!(wal.size().unwrap(), 1);
         assert_eq!(wal.offset, data.len());
         assert_eq!(wal.read(0).unwrap(), b"some data goes here 100");
+    }
+    
+    
+    #[test]
+    fn test_read_at_offset() {
+        let data1 = "first entry";
+        let data2 = "second entry";
+        let mut wal = FileWal {
+            wal_file: tempfile().unwrap(),
+            metadata_file: tempfile().unwrap(),
+            uncommitted: Vec::new(),
+            offset: 0,
+            size: 0,
+        };
+        
+        wal.write(data1.as_bytes()).unwrap();
+        wal.write(data2.as_bytes()).unwrap();
+
+        assert_eq!(wal.read(0).unwrap(), b"first entry");
+        assert_eq!(wal.read(data1.len()).unwrap(), b"second entry");
     }
 }
