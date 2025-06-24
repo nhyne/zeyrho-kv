@@ -4,34 +4,19 @@ version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "queue_1"
-path = "src/queue/chapter_1/main.rs"
+name = "queue"
+path = "src/queue/main.rs"
 
 [[bin]]
-name = "queue_2"
-path = "src/queue/chapter_2/main.rs"
-
-[[bin]]
-name = "queue_3"
-path = "src/queue/chapter_3/main.rs"
-
-[[bin]]
-name = "kv_1"
-path = "src/kv/chapter_1/main.rs"
-
-[[bin]]
-name = "kv_2"
-path = "src/kv/chapter_2/main.rs"
-
-[[bin]]
-name = "echo"
-path = "src/mael/echo/main.rs"
+name = "kv"
+path = "src/kv/main.rs"
 
 [[bin]]
 name = "tree"
 path = "src/main.rs"
 
 [dependencies]
+bytes = "1.10.1"
 prost = "0.13.2"
 tonic = "0.12.2"
 tonic-reflection = "0.12.2"
@@ -40,7 +25,6 @@ rand = "0.8.5"
 nanoid = "0.4.0"
 rmp-serde = "1.3.0"
 serde = { version = "1.0.210", features = ["serde_derive", "derive"] }
-maelstrom-node = "0.1.6"
 
 [build-dependencies]
 tonic-build = "0.12.2"
