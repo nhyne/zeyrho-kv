@@ -1,5 +1,5 @@
-use bytes::{Buf, BufMut, Bytes, BytesMut};
-use std::io::{Read, Write};
+use bytes::Bytes;
+use std::io::{Error, Write};
 
 pub struct FileWal {
     wal_file: std::fs::File,
@@ -10,62 +10,92 @@ pub struct FileWal {
 }
 
 struct WalEntry {
-    offset: usize,
-    data: Bytes,
+    payload: Bytes,
+}
+
+impl WalEntry {
+    fn encode(&self) -> Vec<u8> {
+        let payload_len = self.payload.len() as u32;
+        let checksum = checksum_xor_u32(&self.payload);
+        
+        let mut encoded = Vec::with_capacity(8 + self.payload.len());
+        encoded.extend_from_slice(&payload_len.to_ne_bytes());
+        encoded.extend_from_slice(&checksum.to_ne_bytes());
+        encoded.extend_from_slice(&self.payload);
+        
+        encoded
+    }
+    
+    fn len(&self) -> usize {
+        8 + self.payload.len() // 4 bytes for payload length, 4 bytes for checksum
+    }
 }
 
 pub trait Wal {
-    fn write(&mut self, record: &[u8]) -> Result<(), std::io::Error>;
+    fn write(&mut self, record: &[u8]) -> Result<(), Error>;
 
-    fn read(&self, offset: usize) -> Result<Vec<u8>, std::io::Error>;
+    fn read(&self, offset: usize) -> Result<Vec<u8>, Error>;
 
-    fn size(&self) -> Result<usize, std::io::Error>;
+    fn size(&self) -> usize;
+    
+    fn clean_until(&mut self, offset: usize) -> Result<(), Error>;
 }
 
 impl Wal for FileWal {
-    fn write(&mut self, record: &[u8]) -> Result<(), std::io::Error> {
+    fn write(&mut self, record: &[u8]) -> Result<(), Error> {
         let entry = WalEntry {
-            offset: self.offset,
-            data: Bytes::from(record.to_vec()),
+            payload: Bytes::from(record.to_vec()),
         };
+        
+        let entry_len = entry.len();
         self.uncommitted.push(entry);
         
-        if self.uncommitted.len() > 1000 {
+        if self.uncommitted.len() > 3 {
             self.flush()?;
         }
         
-        self.offset += record.len();
+        self.offset += entry_len;
         self.size += 1;
         Ok(())
     }
 
-    fn read(&self, offset: usize) -> Result<Vec<u8>, std::io::Error> {
-        if offset >= self.offset {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "Offset out of bounds",
-            ));
-        }
-        let mut data = Vec::new();
-        for entry in &self.uncommitted {
-            if entry.offset == offset {
-                data.extend_from_slice(&entry.data);
-                break;
-            }
-        }
-        Ok(data)
+    fn read(&self, offset: usize) -> Result<Vec<u8>, Error> {
+        todo!()
     }
 
-    fn size(&self) -> Result<usize, std::io::Error> {
-        Ok(self.size)
+    fn size(&self) -> usize {
+        self.size
     }
 
+    fn clean_until(&mut self, offset: usize) -> Result<(), Error> {
+        todo!()
+    }
 }
 
 impl FileWal {
-    fn flush(&mut self) -> Result<(), std::io::Error> {
+    pub fn new(wal_path: &str, metadata_path: &str) -> Result<Self, Error> {
+        let wal_file = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(wal_path)?;
+        let metadata_file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(metadata_path)?;
+
+        Ok(FileWal {
+            wal_file,
+            metadata_file,
+            uncommitted: Vec::new(),
+            offset: 0,
+            size: 0,
+        })
+    }
+
+    fn flush(&mut self) -> Result<(), Error> {
         for entry in &self.uncommitted {
-            self.wal_file.write_all(&entry.data)?;
+            self.wal_file.write_all(&entry.encode())?;
         }
         self.wal_file.flush()?;
         self.uncommitted.clear();
@@ -73,6 +103,10 @@ impl FileWal {
         self.metadata_file.write(&self.offset.to_ne_bytes())?;
         Ok(())
     }
+}
+
+fn checksum_xor_u32(bytes: &[u8]) -> usize {
+    bytes.iter().fold(0u8, |acc, &b| acc ^ b) as usize
 }
 
 #[cfg(test)]
@@ -92,7 +126,7 @@ mod tests {
 
         let data = "some data goes here 100";
         wal.write(data.as_bytes()).unwrap();
-        assert_eq!(wal.size().unwrap(), 1);
+        assert_eq!(wal.size(), 1);
         assert_eq!(wal.offset, data.len());
         assert_eq!(wal.read(0).unwrap(), b"some data goes here 100");
     }

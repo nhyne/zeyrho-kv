@@ -7,13 +7,16 @@ use std::collections::VecDeque;
 use std::fs;
 use std::fs::File;
 use std::io::{Read, Write};
+use std::path::Path;
 use std::pin::Pin;
 use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::thread::spawn;
+use prost::Message;
 use tonic::codegen::tokio_stream::Stream;
 use tonic::service::Interceptor;
 use tonic::{async_trait, transport::Server, Request, Response, Status, Streaming};
+use zeyrho::queue::wal::wal::{FileWal, Wal};
 use zeyrho::zeyrho::queue::queue_server::{Queue, QueueServer};
 use zeyrho::zeyrho::queue::{
     DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, ReplicateDataRequest,
@@ -40,10 +43,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let queue = Arc::new(Mutex::new(VecDeque::new()));
     let cloned_queue = queue.clone();
+
+    let wal = FileWal::new("data/wal.wal", "data/wal.meta").unwrap();
+
     let queue_service = SimpleQueue {
         queue,
         sender,
-        current_offset: Mutex::new(0),
+        wal: Arc::new(Mutex::new(wal)),
     };
 
     let handler = spawn(move || {
@@ -77,7 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 struct SimpleQueue {
     queue: Arc<Mutex<VecDeque<i32>>>,
     sender: std::sync::mpsc::Sender<String>,
-    current_offset: Mutex<u64>,
+    wal: Arc<Mutex<FileWal>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -130,7 +136,7 @@ fn process_journal_file(
 
     queue.push_back(request_body.number);
 
-    fs::remove_file(&("data/".to_string() + &file_name))?;
+    // fs::remove_file(&("data/".to_string() + &file_name))?;
     println!("number was: {}", request_body.number);
     Ok(())
 }
@@ -141,9 +147,12 @@ impl Queue for SimpleQueue {
         &self,
         request: Request<EnqueueRequest>,
     ) -> Result<Response<EnqueueResponse>, Status> {
-        // TODO: Add jounaling here before writing to our queue
         let journal_id = journal_request(request.get_ref())
             .map_err(|_| Status::internal("error journaling request"))?;
+
+        let mut buf = Vec::new();
+        request.into_inner().encode(&mut buf).unwrap();
+        self.wal.lock().unwrap().write(&buf)?;
 
         let cloned_id = journal_id.clone();
         self.sender
