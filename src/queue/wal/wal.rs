@@ -10,15 +10,19 @@ pub struct FileWal {
 }
 
 struct WalEntry {
-    payload: Bytes,
+    payload: Vec<u8>,
 }
 
 impl WalEntry {
     fn encode(&self) -> Vec<u8> {
-        let payload_len = self.payload.len() as u32;
+        let payload_len = self.payload.len();
         let checksum = checksum_xor_u32(&self.payload);
 
-        let mut encoded = Vec::with_capacity(8 + self.payload.len());
+        let size_of_payload_len = size_of_val(&payload_len);
+        let size_of_checksum = size_of_val(&checksum);
+
+        let mut encoded =
+            Vec::with_capacity(size_of_payload_len + size_of_checksum + self.payload.len());
         encoded.extend_from_slice(&payload_len.to_ne_bytes());
         encoded.extend_from_slice(&checksum.to_ne_bytes());
         encoded.extend_from_slice(&self.payload);
@@ -44,7 +48,7 @@ pub trait Wal {
 impl Wal for FileWal {
     fn write(&mut self, record: &[u8]) -> Result<(), Error> {
         let entry = WalEntry {
-            payload: Bytes::from(record.to_vec()),
+            payload: record.to_vec(),
         };
 
         let entry_len = entry.len();
@@ -54,7 +58,7 @@ impl Wal for FileWal {
             self.flush()?;
         }
 
-        self.offset += entry_len;
+        self.offset += 8 + entry_len;
         self.size += 1;
         Ok(())
     }
@@ -107,22 +111,28 @@ impl FileWal {
     fn as_vec(&mut self) -> Result<Vec<WalEntry>, Error> {
         let mut vec = Vec::with_capacity(self.size);
 
-        let mut current_offset = 0;
         self.wal_file.seek(SeekFrom::Start(0))?;
 
-        for entry in 0..self.size {
-            let mut len_buf = [0u8; 4];
-            self.wal_file.read_exact(&mut len_buf)?;
-            let payload_len = u32::from_ne_bytes(len_buf) as usize;
+        let mut whole_file = Vec::new();
+        self.wal_file.read_to_end(&mut whole_file)?;
+        self.wal_file.seek(SeekFrom::Start(0))?;
 
-            let mut checksum_buf = [0u8; 4];
+        for _ in 0..self.size {
+            let mut len_buf = [0u8; 8];
+
+            self.wal_file.read_exact(&mut len_buf)?;
+            let payload_len = usize::from_ne_bytes(len_buf);
+
+            let mut checksum_buf = [0u8; 8];
             self.wal_file.read_exact(&mut checksum_buf)?;
-            let checksum = u32::from_ne_bytes(checksum_buf);
+            let checksum = usize::from_ne_bytes(checksum_buf);
 
             let mut payload_buf = vec![0u8; payload_len];
             self.wal_file.read_exact(&mut payload_buf)?;
 
-            if checksum_xor_u32(&payload_buf) != checksum as usize {
+            let actual_checksum = checksum_xor_u32(&payload_buf);
+
+            if actual_checksum != checksum as usize {
                 return Err(Error::new(
                     std::io::ErrorKind::InvalidData,
                     "Checksum mismatch",
@@ -130,13 +140,12 @@ impl FileWal {
             }
 
             vec.push(WalEntry {
-                payload: Bytes::from(payload_buf),
+                payload: payload_buf,
             });
-
-            current_offset += 8 + payload_len; // 4 bytes for length, 4 bytes for checksum
         }
 
-        Ok(vec)
+        let result = Ok(vec);
+        result
     }
 }
 
@@ -200,6 +209,7 @@ mod tests {
 
         wal.write(data1.as_bytes()).unwrap();
         wal.write(data2.as_bytes()).unwrap();
+        wal.flush().unwrap();
 
         let entries = wal.as_vec().unwrap();
         assert_eq!(entries.len(), 2);
