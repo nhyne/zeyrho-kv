@@ -1,1 +1,1 @@
-mod wal;
+pub mod wal;

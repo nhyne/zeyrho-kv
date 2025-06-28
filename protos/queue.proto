@@ -2,16 +2,15 @@ syntax = "proto3";
 package queue;
 
 service Queue {
-  rpc Enqueue (EnqueueRequest) returns (EnqueueResponse);
-  rpc Dequeue (DequeueRequest) returns (DequeueResponse);
-  rpc Size (SizeRequest) returns (SizeResponse);
-  rpc ReplicateData (stream ReplicateDataRequest) returns (stream ReplicateDataResponse);
+  rpc Enqueue(EnqueueRequest) returns (EnqueueResponse);
+  rpc Dequeue(DequeueRequest) returns (DequeueResponse);
+  rpc Size(SizeRequest) returns (SizeResponse);
+  rpc ReplicateData(stream ReplicateDataRequest) returns (stream ReplicateDataResponse);
 }
 
 message EnqueueRequest {
   int32 number = 1;
 }
-
 
 message EnqueueResponse {
   string confirmation = 1;

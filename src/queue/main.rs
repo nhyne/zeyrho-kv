@@ -1,12 +1,14 @@
 mod client;
 
 use nanoid::nanoid;
+use prost::Message;
 use rmp_serde::{Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fs;
 use std::fs::File;
 use std::io::{Read, Write};
+use std::path::Path;
 use std::pin::Pin;
 use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
@@ -14,6 +16,7 @@ use std::thread::spawn;
 use tonic::codegen::tokio_stream::Stream;
 use tonic::service::Interceptor;
 use tonic::{async_trait, transport::Server, Request, Response, Status, Streaming};
+use zeyrho::queue::wal::wal::{FileWal, Wal};
 use zeyrho::zeyrho::queue::queue_server::{Queue, QueueServer};
 use zeyrho::zeyrho::queue::{
     DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, ReplicateDataRequest,
@@ -31,34 +34,19 @@ mod proto {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let address = "127.0.0.1:8080".parse().unwrap();
 
-    let (sender, receiver) = channel();
-
     let service = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)
         .build_v1()
         .unwrap();
 
     let queue = Arc::new(Mutex::new(VecDeque::new()));
-    let cloned_queue = queue.clone();
+
+    let wal = FileWal::new("data/wal.bin", "data/wal.meta").unwrap();
+
     let queue_service = SimpleQueue {
         queue,
-        sender,
-        current_offset: Mutex::new(0),
+        wal: Arc::new(Mutex::new(wal)),
     };
-
-    let handler = spawn(move || {
-        for journaled in receiver {
-            // TODO: We should not be cloning the queue mutex every time we process a message, there should just be one owned queue mutex in this thread
-            let mut grabbed_lock = cloned_queue.lock().unwrap();
-
-            // I don't believe that this is good rust code, but I'm not sure how else to just pass the contents of the lock...
-            let journal_result = process_journal_file(journaled, &mut grabbed_lock);
-            match journal_result {
-                Ok(_) => continue,
-                Err(e) => println!("error processing journal: {}", e),
-            }
-        }
-    });
 
     Server::builder()
         .add_service(service)
@@ -76,8 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 struct SimpleQueue {
     queue: Arc<Mutex<VecDeque<i32>>>,
-    sender: std::sync::mpsc::Sender<String>,
-    current_offset: Mutex<u64>,
+    wal: Arc<Mutex<FileWal>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -102,56 +89,21 @@ impl Interceptor for LoadShed {
     }
 }
 
-fn journal_request(request: &EnqueueRequest) -> Result<String, std::io::Error> {
-    let id = nanoid!();
-
-    let mut buf = Vec::new();
-    request.serialize(&mut Serializer::new(&mut buf)).unwrap();
-
-    let mut file = File::create(&("data/".to_string() + &id)).expect("creating file failed");
-    file.write_all(&buf)?;
-    file.flush()?;
-
-    Ok(id)
-}
-
-fn process_journal_file(
-    file_name: String,
-    queue: &mut VecDeque<i32>,
-) -> Result<(), std::io::Error> {
-    let mut buf = Vec::new();
-    let mut file = File::open(&("data/".to_string() + &file_name)).expect("opening file failed");
-    file.read_to_end(&mut buf)?;
-
-    let byte_slice: &[u8] = &buf;
-
-    let mut de = Deserializer::new(byte_slice);
-    let request_body: EnqueueRequest = Deserialize::deserialize(&mut de).unwrap();
-
-    queue.push_back(request_body.number);
-
-    fs::remove_file(&("data/".to_string() + &file_name))?;
-    println!("number was: {}", request_body.number);
-    Ok(())
-}
-
 #[async_trait]
 impl Queue for SimpleQueue {
     async fn enqueue(
         &self,
         request: Request<EnqueueRequest>,
     ) -> Result<Response<EnqueueResponse>, Status> {
-        // TODO: Add jounaling here before writing to our queue
-        let journal_id = journal_request(request.get_ref())
-            .map_err(|_| Status::internal("error journaling request"))?;
+        let mut buf = Vec::new();
+        let number = request.get_ref().number;
+        request.into_inner().encode(&mut buf).unwrap();
+        self.wal.lock().unwrap().write(&buf)?;
 
-        let cloned_id = journal_id.clone();
-        self.sender
-            .send(journal_id)
-            .map_err(|e| Status::internal("error queueing journal for processing"))?;
+        self.queue.lock().unwrap().push_back(number);
 
         Ok(Response::new(EnqueueResponse {
-            confirmation: { cloned_id },
+            confirmation: { "".to_string() },
         }))
     }
 
@@ -188,5 +140,19 @@ impl Queue for SimpleQueue {
         request: Request<Streaming<ReplicateDataRequest>>,
     ) -> Result<Response<Self::ReplicateDataStream>, Status> {
         todo!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::Bytes;
+
+    #[test]
+    fn test_decode() {
+        let data = b"\x08\x01";
+        let bytes = Bytes::from(data.to_vec());
+        let request = EnqueueRequest::decode(bytes).unwrap();
+        assert_eq!(request.number, 1);
     }
 }

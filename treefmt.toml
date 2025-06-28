@@ -1,0 +1,12 @@
+excludes = ["data/*"]
+
+[formatter.rust]
+command = "rustfmt"
+options = [ "--edition", "2021" ]
+includes = [ "*.rs" ]
+excludes = [ "src/zeyrho/kv_store.rs", "src/zeyrho/queue.rs" ]
+
+[formatter.proto]
+command = "sh"
+options = [ "-c", "buf format -w" ]
+includes = [ "*.proto" ]
