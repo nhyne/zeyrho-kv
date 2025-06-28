@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let queue = Arc::new(Mutex::new(VecDeque::new()));
 
-    let wal = FileWal::new("data/wal.wal", "data/wal.meta").unwrap();
+    let wal = FileWal::new("data/wal.bin", "data/wal.meta").unwrap();
 
     let queue_service = SimpleQueue {
         queue,
@@ -140,5 +140,19 @@ impl Queue for SimpleQueue {
         request: Request<Streaming<ReplicateDataRequest>>,
     ) -> Result<Response<Self::ReplicateDataStream>, Status> {
         todo!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::Bytes;
+
+    #[test]
+    fn test_decode() {
+        let data = b"\x08\x01";
+        let bytes = Bytes::from(data.to_vec());
+        let request = EnqueueRequest::decode(bytes).unwrap();
+        assert_eq!(request.number, 1);
     }
 }
