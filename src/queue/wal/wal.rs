@@ -184,7 +184,7 @@ mod tests {
         assert_eq!(wal.read(0).unwrap(), b"first entry");
         assert_eq!(wal.read(data1.len()).unwrap(), b"second entry");
     }
-    
+
     #[test]
     fn test_as_vec() {
         let mut wal = FileWal {
