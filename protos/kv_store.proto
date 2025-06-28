@@ -2,9 +2,9 @@ syntax = "proto3";
 package kv_store;
 
 service KVStore {
-  rpc Set (SetRequest) returns (SetResponse);
-  rpc Get (GetRequest) returns (GetResponse);
-  rpc Delete (DeleteRequest) returns (DeleteResponse);
+  rpc Set(SetRequest) returns (SetResponse);
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
 }
 
 message SetRequest {
