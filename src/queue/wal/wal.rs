@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use std::io::{Error, Write};
+use std::io::{Error, Read, Seek, SeekFrom, Write};
 
 pub struct FileWal {
     wal_file: std::fs::File,
@@ -17,15 +17,15 @@ impl WalEntry {
     fn encode(&self) -> Vec<u8> {
         let payload_len = self.payload.len() as u32;
         let checksum = checksum_xor_u32(&self.payload);
-        
+
         let mut encoded = Vec::with_capacity(8 + self.payload.len());
         encoded.extend_from_slice(&payload_len.to_ne_bytes());
         encoded.extend_from_slice(&checksum.to_ne_bytes());
         encoded.extend_from_slice(&self.payload);
-        
+
         encoded
     }
-    
+
     fn len(&self) -> usize {
         8 + self.payload.len() // 4 bytes for payload length, 4 bytes for checksum
     }
@@ -37,7 +37,7 @@ pub trait Wal {
     fn read(&self, offset: usize) -> Result<Vec<u8>, Error>;
 
     fn size(&self) -> usize;
-    
+
     fn clean_until(&mut self, offset: usize) -> Result<(), Error>;
 }
 
@@ -46,14 +46,14 @@ impl Wal for FileWal {
         let entry = WalEntry {
             payload: Bytes::from(record.to_vec()),
         };
-        
+
         let entry_len = entry.len();
         self.uncommitted.push(entry);
-        
+
         if self.uncommitted.len() > 3 {
             self.flush()?;
         }
-        
+
         self.offset += entry_len;
         self.size += 1;
         Ok(())
@@ -103,6 +103,41 @@ impl FileWal {
         self.metadata_file.write(&self.offset.to_ne_bytes())?;
         Ok(())
     }
+
+    fn as_vec(&mut self) -> Result<Vec<WalEntry>, Error> {
+        let mut vec = Vec::with_capacity(self.size);
+
+        let mut current_offset = 0;
+        self.wal_file.seek(SeekFrom::Start(0))?;
+
+        for entry in 0..self.size {
+            let mut len_buf = [0u8; 4];
+            self.wal_file.read_exact(&mut len_buf)?;
+            let payload_len = u32::from_ne_bytes(len_buf) as usize;
+
+            let mut checksum_buf = [0u8; 4];
+            self.wal_file.read_exact(&mut checksum_buf)?;
+            let checksum = u32::from_ne_bytes(checksum_buf);
+
+            let mut payload_buf = vec![0u8; payload_len];
+            self.wal_file.read_exact(&mut payload_buf)?;
+
+            if checksum_xor_u32(&payload_buf) != checksum as usize {
+                return Err(Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Checksum mismatch",
+                ));
+            }
+
+            vec.push(WalEntry {
+                payload: Bytes::from(payload_buf),
+            });
+
+            current_offset += 8 + payload_len; // 4 bytes for length, 4 bytes for checksum
+        }
+
+        Ok(vec)
+    }
 }
 
 fn checksum_xor_u32(bytes: &[u8]) -> usize {
@@ -130,8 +165,7 @@ mod tests {
         assert_eq!(wal.offset, data.len());
         assert_eq!(wal.read(0).unwrap(), b"some data goes here 100");
     }
-    
-    
+
     #[test]
     fn test_read_at_offset() {
         let data1 = "first entry";
@@ -143,11 +177,33 @@ mod tests {
             offset: 0,
             size: 0,
         };
-        
+
         wal.write(data1.as_bytes()).unwrap();
         wal.write(data2.as_bytes()).unwrap();
 
         assert_eq!(wal.read(0).unwrap(), b"first entry");
         assert_eq!(wal.read(data1.len()).unwrap(), b"second entry");
+    }
+    
+    #[test]
+    fn test_as_vec() {
+        let mut wal = FileWal {
+            wal_file: tempfile().unwrap(),
+            metadata_file: tempfile().unwrap(),
+            uncommitted: Vec::new(),
+            offset: 0,
+            size: 0,
+        };
+
+        let data1 = "first entry";
+        let data2 = "second entry";
+
+        wal.write(data1.as_bytes()).unwrap();
+        wal.write(data2.as_bytes()).unwrap();
+
+        let entries = wal.as_vec().unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].payload, Bytes::from(data1));
+        assert_eq!(entries[1].payload, Bytes::from(data2));
     }
 }

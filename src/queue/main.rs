@@ -1,6 +1,7 @@
 mod client;
 
 use nanoid::nanoid;
+use prost::Message;
 use rmp_serde::{Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -12,7 +13,6 @@ use std::pin::Pin;
 use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::thread::spawn;
-use prost::Message;
 use tonic::codegen::tokio_stream::Stream;
 use tonic::service::Interceptor;
 use tonic::{async_trait, transport::Server, Request, Response, Status, Streaming};
