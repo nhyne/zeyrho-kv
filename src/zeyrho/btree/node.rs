@@ -1,4 +1,3 @@
-use crate::zeyrho::btree::tree::BPlusTree;
 use crate::zeyrho::btree::{DEGREE, MAX_KVS_IN_LEAF, SEPARATORS_MAX_SIZE};
 use std::cell::RefCell;
 use std::fmt::{Debug, Display, Formatter};
@@ -205,13 +204,7 @@ impl<K: Ord + Debug, V: Debug> Node<K, V> {
         &mut self,
         rc_self: &Rc<RefCell<Self>>,
     ) -> (Rc<K>, Rc<RefCell<Self>>) {
-        if let Node::Leaf {
-            key_vals,
-            next,
-            prev,
-            ..
-        } = self
-        {
+        if let Node::Leaf { key_vals, next, .. } = self {
             let mid = key_vals.len() / 2;
 
             let split_point = key_vals[mid].0.clone();

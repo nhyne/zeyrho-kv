@@ -1,7 +1,6 @@
 mod zeyrho;
 
 use crate::zeyrho::btree::tree::BPlusTree;
-use std::ops::Deref;
 
 fn main() {
     let mut tree = BPlusTree::new();

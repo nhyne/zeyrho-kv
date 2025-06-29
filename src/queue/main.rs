@@ -1,18 +1,11 @@
 mod client;
 
-use nanoid::nanoid;
 use prost::Message;
-use rmp_serde::{Deserializer, Serializer};
-use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::{fmt, fs};
-use std::fs::File;
-use std::io::{Read, Write};
-use std::path::Path;
+use std::fmt;
+use std::io::Write;
 use std::pin::Pin;
-use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
-use std::thread::spawn;
 use tonic::codegen::tokio_stream::Stream;
 use tonic::service::Interceptor;
 use tonic::{async_trait, transport::Server, Request, Response, Status, Streaming};
@@ -34,7 +27,7 @@ mod proto {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let address = "127.0.0.1:8080".parse().unwrap();
-    
+
     tracing_subscriber::fmt::init();
 
     let service = tonic_reflection::server::Builder::configure()
@@ -75,7 +68,8 @@ impl fmt::Debug for SimpleQueue {
         f.debug_struct("SimpleQueue")
             .field("queue_length", &self.queue.lock().unwrap().len())
             .finish()
-    }}
+    }
+}
 
 #[derive(Debug, Default, Clone)]
 struct LoadShed {

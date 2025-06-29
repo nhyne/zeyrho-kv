@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use std::io::{Error, Read, Seek, SeekFrom, Write};
 
 pub struct FileWal {
