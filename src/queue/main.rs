@@ -5,7 +5,7 @@ use prost::Message;
 use rmp_serde::{Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::fs;
+use std::{fmt, fs};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -16,6 +16,7 @@ use std::thread::spawn;
 use tonic::codegen::tokio_stream::Stream;
 use tonic::service::Interceptor;
 use tonic::{async_trait, transport::Server, Request, Response, Status, Streaming};
+use tracing::{info, instrument};
 use zeyrho::queue::wal::wal::{FileWal, Wal};
 use zeyrho::zeyrho::queue::queue_server::{Queue, QueueServer};
 use zeyrho::zeyrho::queue::{
@@ -33,6 +34,8 @@ mod proto {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let address = "127.0.0.1:8080".parse().unwrap();
+    
+    tracing_subscriber::fmt::init();
 
     let service = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)
@@ -67,6 +70,13 @@ struct SimpleQueue {
     wal: Arc<Mutex<FileWal>>,
 }
 
+impl fmt::Debug for SimpleQueue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SimpleQueue")
+            .field("queue_length", &self.queue.lock().unwrap().len())
+            .finish()
+    }}
+
 #[derive(Debug, Default, Clone)]
 struct LoadShed {
     // would want to do some sort of "bucketing" or "how much load do we have?"
@@ -79,6 +89,7 @@ impl Interceptor for LoadShed {
     fn call(&mut self, request: Request<()>) -> Result<Request<()>, Status> {
         let grabbed_lock = self.shed.lock().unwrap();
 
+        info!("anything");
         let current_val = *grabbed_lock;
 
         if current_val {
@@ -91,6 +102,7 @@ impl Interceptor for LoadShed {
 
 #[async_trait]
 impl Queue for SimpleQueue {
+    #[instrument]
     async fn enqueue(
         &self,
         request: Request<EnqueueRequest>,
@@ -100,6 +112,7 @@ impl Queue for SimpleQueue {
         request.into_inner().encode(&mut buf).unwrap();
         self.wal.lock().unwrap().write(&buf)?;
 
+        info!("anything");
         self.queue.lock().unwrap().push_back(number);
 
         Ok(Response::new(EnqueueResponse {
