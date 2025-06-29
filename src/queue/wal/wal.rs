@@ -157,6 +157,7 @@ fn checksum_xor_u32(bytes: &[u8]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytes::Bytes;
     use tempfile::tempfile;
 
     #[test]

@@ -1,8 +1,9 @@
 mod client;
 
+use bytes::Bytes;
+use nanoid::nanoid;
 use prost::Message;
 use std::collections::VecDeque;
-use std::fmt;
 use std::io::Write;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -11,6 +12,7 @@ use tonic::service::Interceptor;
 use tonic::{async_trait, transport::Server, Request, Response, Status, Streaming};
 use tracing::{info, instrument};
 use zeyrho::queue::wal::wal::{FileWal, Wal};
+use zeyrho::zeyrho::queue::dequeue_response::QueueMessage;
 use zeyrho::zeyrho::queue::queue_server::{Queue, QueueServer};
 use zeyrho::zeyrho::queue::{
     DequeueRequest, DequeueResponse, EnqueueRequest, EnqueueResponse, ReplicateDataRequest,
@@ -60,7 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[derive(Debug)]
 struct SimpleQueue {
-    queue: Arc<Mutex<VecDeque<i32>>>,
+    queue: Arc<Mutex<VecDeque<QueueMessage>>>,
     wal: Arc<Mutex<FileWal>>,
 }
 
@@ -76,7 +78,6 @@ impl Interceptor for LoadShed {
     fn call(&mut self, request: Request<()>) -> Result<Request<()>, Status> {
         let grabbed_lock = self.shed.lock().unwrap();
 
-        info!("anything");
         let current_val = *grabbed_lock;
 
         if current_val {
@@ -95,15 +96,17 @@ impl Queue for SimpleQueue {
         request: Request<EnqueueRequest>,
     ) -> Result<Response<EnqueueResponse>, Status> {
         let mut buf = Vec::new();
-        let number = request.get_ref().number;
+        let message_id = nanoid!();
+        let queue_message = QueueMessage {
+            id: message_id.clone(),
+            payload: request.get_ref().payload.clone(),
+        };
+        self.queue.lock().unwrap().push_back(queue_message);
         request.into_inner().encode(&mut buf).unwrap();
         self.wal.lock().unwrap().write(&buf)?;
 
-        info!("anything");
-        self.queue.lock().unwrap().push_back(number);
-
         Ok(Response::new(EnqueueResponse {
-            confirmation: { "".to_string() },
+            message_id: { message_id },
         }))
     }
 
@@ -121,13 +124,15 @@ impl Queue for SimpleQueue {
             }
         }
 
-        Ok(Response::new(DequeueResponse {
-            numbers: { return_vec },
-        }))
+        let response = DequeueResponse {
+            messages: return_vec,
+        };
+
+        Ok(Response::new(response))
     }
 
     async fn size(&self, request: Request<SizeRequest>) -> Result<Response<SizeResponse>, Status> {
-        let s = self.queue.lock().unwrap().len() as i32;
+        let s = self.queue.lock().unwrap().len() as u64;
 
         Ok(Response::new(SizeResponse { size: { s } }))
     }
@@ -153,6 +158,6 @@ mod tests {
         let data = b"\x08\x01";
         let bytes = Bytes::from(data.to_vec());
         let request = EnqueueRequest::decode(bytes).unwrap();
-        assert_eq!(request.number, 1);
+        assert_eq!(request.payload, b"1");
     }
 }

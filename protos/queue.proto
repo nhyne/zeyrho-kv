@@ -9,25 +9,29 @@ service Queue {
 }
 
 message EnqueueRequest {
-  int32 number = 1;
+  bytes payload = 1;
 }
 
 message EnqueueResponse {
-  string confirmation = 1;
+  string messageId = 1;
 }
 
 message DequeueRequest {
-  int32 number = 1;
+  uint32 number = 1;
 }
 
 message DequeueResponse {
-  repeated int32 numbers = 1;
+  message QueueMessage {
+    string id = 1;
+    bytes payload = 2;
+  }
+  repeated QueueMessage messages = 1;
 }
 
 message SizeRequest {}
 
 message SizeResponse {
-  int32 size = 1;
+  uint64 size = 1;
 }
 
 message ReplicateDataRequest {
