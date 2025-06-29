@@ -58,17 +58,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[derive(Debug)]
 struct SimpleQueue {
     queue: Arc<Mutex<VecDeque<i32>>>,
     wal: Arc<Mutex<FileWal>>,
-}
-
-impl fmt::Debug for SimpleQueue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SimpleQueue")
-            .field("queue_length", &self.queue.lock().unwrap().len())
-            .finish()
-    }
 }
 
 #[derive(Debug, Default, Clone)]

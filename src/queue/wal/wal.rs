@@ -1,5 +1,6 @@
 use std::io::{Error, Read, Seek, SeekFrom, Write};
 
+#[derive(Debug)]
 pub struct FileWal {
     wal_file: std::fs::File,
     metadata_file: std::fs::File,
@@ -8,6 +9,7 @@ pub struct FileWal {
     size: usize,
 }
 
+#[derive(Debug)]
 struct WalEntry {
     payload: Vec<u8>,
 }
