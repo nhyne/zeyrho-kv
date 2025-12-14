@@ -1,5 +1,5 @@
-use zeyrho::zeyrho::queue::queue_client::QueueClient;
 use zeyrho::zeyrho::queue::EnqueueRequest;
+use zeyrho::zeyrho::queue::queue_client::QueueClient;
 
 pub async fn execute_queries() -> Result<Vec<String>, tonic::transport::Error> {
     let mut client = QueueClient::connect("http://localhost:8080").await?;

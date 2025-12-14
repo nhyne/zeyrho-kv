@@ -9,7 +9,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use tonic::codegen::tokio_stream::Stream;
 use tonic::service::Interceptor;
-use tonic::{async_trait, transport::Server, Request, Response, Status, Streaming};
+use tonic::{Request, Response, Status, Streaming, async_trait, transport::Server};
 use tracing::{info, instrument};
 use zeyrho::queue::wal::wal::{FileWal, Wal};
 use zeyrho::zeyrho::queue::dequeue_response::QueueMessage;
@@ -48,12 +48,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .add_service(service)
-        .add_service(QueueServer::with_interceptor(
-            queue_service,
-            LoadShed {
-                shed: Arc::new(Mutex::new(false)),
-            },
-        ))
+        .add_service(QueueServer::with_interceptor(queue_service, LoadShed {
+            shed: Arc::new(Mutex::new(false)),
+        }))
         .serve(address)
         .await?;
 

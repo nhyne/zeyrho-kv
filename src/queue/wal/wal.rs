@@ -17,13 +17,9 @@ struct WalEntry {
 impl WalEntry {
     fn encode(&self) -> Vec<u8> {
         let payload_len = self.payload.len();
-        let checksum = checksum_xor_u32(&self.payload);
+        let checksum = checksum_xor(&self.payload);
 
-        let size_of_payload_len = size_of_val(&payload_len);
-        let size_of_checksum = size_of_val(&checksum);
-
-        let mut encoded =
-            Vec::with_capacity(size_of_payload_len + size_of_checksum + self.payload.len());
+        let mut encoded = Vec::with_capacity(std::mem::size_of::<usize>() * 2 + self.payload.len());
         encoded.extend_from_slice(&payload_len.to_ne_bytes());
         encoded.extend_from_slice(&checksum.to_ne_bytes());
         encoded.extend_from_slice(&self.payload);
@@ -32,14 +28,14 @@ impl WalEntry {
     }
 
     fn len(&self) -> usize {
-        8 + self.payload.len() // 4 bytes for payload length, 4 bytes for checksum
+        std::mem::size_of::<usize>() * 2 + self.payload.len() // usize bytes for payload length, usize bytes for checksum
     }
 }
 
 pub trait Wal {
     fn write(&mut self, record: &[u8]) -> Result<(), Error>;
 
-    fn read(&self, offset: usize) -> Result<Vec<u8>, Error>;
+    fn read(&self, index: usize) -> Result<Vec<u8>, Error>;
 
     fn size(&self) -> usize;
 
@@ -55,17 +51,62 @@ impl Wal for FileWal {
         let entry_len = entry.len();
         self.uncommitted.push(entry);
 
-        if self.uncommitted.len() > 3 {
+        // TODO: This really doesn't do anything, we're just putting it in a queue to clear it...
+        if self.uncommitted.len() > 0 {
             self.flush()?;
         }
 
-        self.offset += 8 + entry_len;
+        self.offset += entry_len;
+        println!("current offset: {}", self.offset);
         self.size += 1;
         Ok(())
     }
 
-    fn read(&self, offset: usize) -> Result<Vec<u8>, Error> {
-        todo!()
+    fn read(&self, index: usize) -> Result<Vec<u8>, Error> {
+        if index >= self.size {
+            return Err(Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Index out of range, WAL is length {}", self.size),
+            ));
+        }
+
+        let mut file = self.wal_file.try_clone()?;
+        file.seek(SeekFrom::Start(0))?;
+
+        // Skip to the desired entry
+        for i in 0..=index {
+            // Read payload length
+            let mut len_buf = [0u8; std::mem::size_of::<usize>()];
+            file.read_exact(&mut len_buf)?;
+            let payload_len = usize::from_ne_bytes(len_buf);
+
+            // Read checksum
+            let mut checksum_buf = [0u8; std::mem::size_of::<usize>()];
+            file.read_exact(&mut checksum_buf)?;
+            let stored_checksum = usize::from_ne_bytes(checksum_buf);
+
+            // If this is the entry we want, read and return it
+            if i == index {
+                let mut payload = vec![0u8; payload_len];
+                file.read_exact(&mut payload)?;
+
+                // Verify checksum
+                let actual_checksum = checksum_xor(&payload);
+                if actual_checksum != stored_checksum {
+                    return Err(Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Checksum mismatch",
+                    ));
+                }
+
+                return Ok(payload);
+            }
+
+            // Skip this entry's payload
+            file.seek(SeekFrom::Current(payload_len as i64))?;
+        }
+
+        unreachable!()
     }
 
     fn size(&self) -> usize {
@@ -119,21 +160,21 @@ impl FileWal {
         self.wal_file.seek(SeekFrom::Start(0))?;
 
         for _ in 0..self.size {
-            let mut len_buf = [0u8; 8];
+            let mut len_buf = [0u8; std::mem::size_of::<usize>()];
 
             self.wal_file.read_exact(&mut len_buf)?;
             let payload_len = usize::from_ne_bytes(len_buf);
 
-            let mut checksum_buf = [0u8; 8];
+            let mut checksum_buf = [0u8; std::mem::size_of::<usize>()];
             self.wal_file.read_exact(&mut checksum_buf)?;
             let checksum = usize::from_ne_bytes(checksum_buf);
 
             let mut payload_buf = vec![0u8; payload_len];
             self.wal_file.read_exact(&mut payload_buf)?;
 
-            let actual_checksum = checksum_xor_u32(&payload_buf);
+            let actual_checksum = checksum_xor(&payload_buf);
 
-            if actual_checksum != checksum as usize {
+            if actual_checksum != checksum {
                 return Err(Error::new(
                     std::io::ErrorKind::InvalidData,
                     "Checksum mismatch",
@@ -150,7 +191,7 @@ impl FileWal {
     }
 }
 
-fn checksum_xor_u32(bytes: &[u8]) -> usize {
+fn checksum_xor(bytes: &[u8]) -> usize {
     bytes.iter().fold(0u8, |acc, &b| acc ^ b) as usize
 }
 
@@ -173,7 +214,7 @@ mod tests {
         let data = "some data goes here 100";
         wal.write(data.as_bytes()).unwrap();
         assert_eq!(wal.size(), 1);
-        assert_eq!(wal.offset, data.len());
+        assert_eq!(wal.offset, data.len() + std::mem::size_of::<usize>() * 2);
         assert_eq!(wal.read(0).unwrap(), b"some data goes here 100");
     }
 
@@ -193,7 +234,7 @@ mod tests {
         wal.write(data2.as_bytes()).unwrap();
 
         assert_eq!(wal.read(0).unwrap(), b"first entry");
-        assert_eq!(wal.read(data1.len()).unwrap(), b"second entry");
+        assert_eq!(wal.read(1).unwrap(), b"second entry");
     }
 
     #[test]
