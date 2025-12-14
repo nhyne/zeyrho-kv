@@ -11,7 +11,7 @@ use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::thread::spawn;
 use tonic::service::Interceptor;
-use tonic::{async_trait, transport::Server, Request, Response, Status};
+use tonic::{Request, Response, Status, async_trait, transport::Server};
 use zeyrho::zeyrho::kv_store::kv_store_server::{KvStore, KvStoreServer};
 use zeyrho::zeyrho::kv_store::{
     DeleteRequest, DeleteResponse, GetRequest, GetResponse, SetRequest, SetResponse,
@@ -58,12 +58,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .add_service(service)
-        .add_service(KvStoreServer::with_interceptor(
-            queue_service,
-            LoadShed {
-                shed: Arc::new(Mutex::new(false)),
-            },
-        ))
+        .add_service(KvStoreServer::with_interceptor(queue_service, LoadShed {
+            shed: Arc::new(Mutex::new(false)),
+        }))
         .serve(address)
         .await?;
 

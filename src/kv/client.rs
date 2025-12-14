@@ -1,5 +1,5 @@
-use zeyrho::zeyrho::kv_store::kv_store_client::KvStoreClient;
 use zeyrho::zeyrho::kv_store::SetRequest;
+use zeyrho::zeyrho::kv_store::kv_store_client::KvStoreClient;
 
 pub async fn execute_queries() -> Result<Vec<String>, tonic::transport::Error> {
     let mut client = KvStoreClient::connect("http://localhost:8080").await?;

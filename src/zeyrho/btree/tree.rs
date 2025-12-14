@@ -69,7 +69,7 @@ TODO: Would be nice if the tests weren't based on DEGREE = 3
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::zeyrho::btree::DEGREE;
+    use crate::zeyrho::btree::{CHILDREN_MAX_SIZE, DEGREE};
     use std::ops::Deref;
 
     fn create_tree() -> BPlusTree<i32, String> {
@@ -229,13 +229,9 @@ mod tests {
         let expected_separators = [vec![&1, &3], vec![&7]];
 
         let mut child_index = 0;
-        let expected_children = [
-            vec![&0],
-            vec![&1, &2],
-            vec![&3, &4],
-            vec![&5, &6],
-            vec![&7, &8],
-        ];
+        let expected_children = [vec![&0], vec![&1, &2], vec![&3, &4], vec![&5, &6], vec![
+            &7, &8,
+        ]];
 
         if let Node::Link {
             separators,
