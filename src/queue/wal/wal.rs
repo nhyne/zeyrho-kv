@@ -141,7 +141,10 @@ impl FileWal {
             Ok(_) => {
                 // Successfully read offset, now try to read size
                 match metadata_file.read_exact(&mut size_buf) {
-                    Ok(_) => (usize::from_ne_bytes(offset_buf), usize::from_ne_bytes(size_buf)),
+                    Ok(_) => (
+                        usize::from_ne_bytes(offset_buf),
+                        usize::from_ne_bytes(size_buf),
+                    ),
                     Err(_) => (0, 0), // If size is missing, start fresh
                 }
             }
