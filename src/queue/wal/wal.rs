@@ -51,14 +51,16 @@ impl Wal for FileWal {
         let entry_len = entry.len();
         self.uncommitted.push(entry);
 
+        // Update offset and size before flushing so metadata is correct
+        self.offset += entry_len;
+        println!("current offset: {}", self.offset);
+        self.size += 1;
+
         // TODO: This really doesn't do anything, we're just putting it in a queue to clear it...
         if self.uncommitted.len() > 0 {
             self.flush()?;
         }
 
-        self.offset += entry_len;
-        println!("current offset: {}", self.offset);
-        self.size += 1;
         Ok(())
     }
 
@@ -121,21 +123,37 @@ impl Wal for FileWal {
 impl FileWal {
     pub fn new(wal_path: &str, metadata_path: &str) -> Result<Self, Error> {
         let wal_file = std::fs::OpenOptions::new()
+            .read(true)
             .append(true)
             .create(true)
             .open(wal_path)?;
-        let metadata_file = std::fs::OpenOptions::new()
+        let mut metadata_file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .open(metadata_path)?;
 
+        // Read offset and size from metadata file if it exists
+        let mut offset_buf = [0u8; std::mem::size_of::<usize>()];
+        let mut size_buf = [0u8; std::mem::size_of::<usize>()];
+
+        let (offset, size) = match metadata_file.read_exact(&mut offset_buf) {
+            Ok(_) => {
+                // Successfully read offset, now try to read size
+                match metadata_file.read_exact(&mut size_buf) {
+                    Ok(_) => (usize::from_ne_bytes(offset_buf), usize::from_ne_bytes(size_buf)),
+                    Err(_) => (0, 0), // If size is missing, start fresh
+                }
+            }
+            Err(_) => (0, 0), // If file is empty or doesn't have enough data, start at 0
+        };
+
         Ok(FileWal {
             wal_file,
             metadata_file,
             uncommitted: Vec::new(),
-            offset: 0,
-            size: 0,
+            offset,
+            size,
         })
     }
 
@@ -145,8 +163,18 @@ impl FileWal {
         }
         self.wal_file.flush()?;
         self.uncommitted.clear();
+
+        // Write both offset and size to metadata file
         self.metadata_file.set_len(0)?;
-        self.metadata_file.write(&self.offset.to_ne_bytes())?;
+        self.metadata_file.seek(SeekFrom::Start(0))?;
+
+        let offset_to_write = &self.offset.to_ne_bytes();
+        let size_to_write = &self.size.to_ne_bytes();
+        println!("size: {:?}, offset: {:?}", offset_to_write, size_to_write);
+
+        self.metadata_file.write_all(&self.offset.to_ne_bytes())?;
+        self.metadata_file.write_all(&self.size.to_ne_bytes())?;
+        self.metadata_file.flush()?;
         Ok(())
     }
 
@@ -258,5 +286,88 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].payload, Bytes::from(data1));
         assert_eq!(entries[1].payload, Bytes::from(data2));
+    }
+
+    #[test]
+    fn test_metadata_file_persists_state() {
+        use std::io::Read;
+        use tempfile::NamedTempFile;
+
+        let wal_file = NamedTempFile::new().unwrap();
+        let metadata_file = NamedTempFile::new().unwrap();
+
+        let mut wal = FileWal {
+            wal_file: wal_file.reopen().unwrap(),
+            metadata_file: metadata_file.reopen().unwrap(),
+            uncommitted: Vec::new(),
+            offset: 0,
+            size: 0,
+        };
+
+        let data1 = "first entry";
+        let data2 = "second entry";
+
+        wal.write(data1.as_bytes()).unwrap();
+        wal.write(data2.as_bytes()).unwrap();
+
+        // Expected offset: (data1.len() + 16) + (data2.len() + 16)
+        let expected_offset = (data1.len() + std::mem::size_of::<usize>() * 2)
+            + (data2.len() + std::mem::size_of::<usize>() * 2);
+        let expected_size = 2;
+
+        // Read metadata file and verify it contains correct offset and size
+        let mut meta_file = metadata_file.reopen().unwrap();
+        let mut offset_buf = [0u8; std::mem::size_of::<usize>()];
+        let mut size_buf = [0u8; std::mem::size_of::<usize>()];
+
+        meta_file.read_exact(&mut offset_buf).unwrap();
+        meta_file.read_exact(&mut size_buf).unwrap();
+
+        let stored_offset = usize::from_ne_bytes(offset_buf);
+        let stored_size = usize::from_ne_bytes(size_buf);
+
+        assert_eq!(stored_offset, expected_offset);
+        assert_eq!(stored_size, expected_size);
+        assert_eq!(wal.offset, expected_offset);
+        assert_eq!(wal.size, expected_size);
+    }
+
+    #[test]
+    fn test_wal_recovery() {
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let wal_path = dir.path().join("test.wal");
+        let metadata_path = dir.path().join("test.meta");
+
+        let wal_path_str = wal_path.to_str().unwrap();
+        let metadata_path_str = metadata_path.to_str().unwrap();
+
+        let data1 = "first entry";
+        let data2 = "second entry";
+        let data3 = "third entry";
+
+        // Create initial WAL and write data
+        {
+            let mut wal = FileWal::new(&wal_path_str, &metadata_path_str).unwrap();
+            wal.write(data1.as_bytes()).unwrap();
+            wal.write(data2.as_bytes()).unwrap();
+            wal.write(data3.as_bytes()).unwrap();
+        } // WAL dropped here, files should persist
+
+        // Create new WAL instance with same files
+        let wal = FileWal::new(&wal_path_str, &metadata_path_str).unwrap();
+
+        // Verify offset and size were restored
+        let expected_offset = (data1.len() + std::mem::size_of::<usize>() * 2)
+            + (data2.len() + std::mem::size_of::<usize>() * 2)
+            + (data3.len() + std::mem::size_of::<usize>() * 2);
+        assert_eq!(wal.offset, expected_offset);
+        assert_eq!(wal.size, 3);
+
+        // Verify we can read the data
+        assert_eq!(wal.read(0).unwrap(), data1.as_bytes());
+        assert_eq!(wal.read(1).unwrap(), data2.as_bytes());
+        assert_eq!(wal.read(2).unwrap(), data3.as_bytes());
     }
 }

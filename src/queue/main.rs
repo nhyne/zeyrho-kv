@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn test_decode() {
-        let data = b"\x08\x01";
+        let data = b"\x0a\x01\x31"; // field 1 (bytes), length 1, value '1' (0x31)
         let bytes = Bytes::from(data.to_vec());
         let request = EnqueueRequest::decode(bytes).unwrap();
         assert_eq!(request.payload, b"1");
